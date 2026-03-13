@@ -139,7 +139,7 @@ export default {
               `https://api.apilayer.com/whois/query?domain=${domainForWhois}`,
               {
                 headers: {
-                  apikey: whoisApiKey
+                  "APIKEY": whoisApiKey
                 }
               }
             );
