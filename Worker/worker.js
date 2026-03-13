@@ -150,7 +150,8 @@ export default {
             );
             const whoisData = await whois.json();
             console.log("WHOIS response status:", whois.status, "data:", whoisData);
-            results.whois = whoisData;
+            // APILayer returns data in { result: {...} } format, extract it
+            results.whois = whoisData.result || whoisData;
           } catch (err) {
             console.error("WHOIS fetch error:", err);
             results.whois = { error: err.message };
