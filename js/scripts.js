@@ -1828,10 +1828,18 @@ Date:
                 return;
             }
             
+            // Check if IOC type is supported by Worker API
+            if (type !== 'ip' && type !== 'domain' && type !== 'url') {
+                showToast('Worker API supports IP, Domain, and URL types only. For hashes, please use direct API.', 'warning');
+                // Fall back to direct API calls for hash type
+                await startSingleScanLegacy(input, type);
+                return;
+            }
+            
             currentResults.ioc = ioc;
             currentResults.type = type;
 
-            console.log('Scanning IOC:', ioc, 'type:', type);
+            console.log('Scanning IOC via Worker:', ioc, 'type:', type);
 
             // Save to recent
             saveRecentScan(ioc, type);
@@ -1846,6 +1854,33 @@ Date:
             const exportBar = document.getElementById('exportBar');
             if (exportBar) exportBar.style.display = 'flex';
 
+            // Use Worker API to aggregate all threat intelligence lookups
+            // This avoids CORS issues and protects API keys
+            try {
+                await scanViaWorker(ioc, type);
+            } catch (error) {
+                console.error('Worker scan failed:', error);
+                // If Worker fails, try legacy direct API calls as fallback
+                console.log('Falling back to direct API calls...');
+                await startSingleScanLegacy(input, type);
+            }
+            
+            // Render combined view if active
+            const combinedTab = document.getElementById('combinedTab');
+            if (combinedTab && combinedTab.classList.contains('active')) {
+                renderCombined();
+            }
+        }
+        
+        // Legacy direct API calls - used as fallback when Worker is unavailable
+        async function startSingleScanLegacy(input, type) {
+            const ioc = input.trim();
+            
+            currentResults.ioc = ioc;
+            currentResults.type = type;
+
+            console.log('Scanning IOC (legacy):', ioc, 'type:', type);
+
             // Run scans in parallel with error isolation
             const keys = getKeys();
             const scanPromises = [];
@@ -1856,9 +1891,17 @@ Date:
                 showError('vt', 'VirusTotal API key not configured');
             }
 
-            if (keys.abuseipdb) {
+            if (keys.abuseipdb && type === 'ip') {
                 scanPromises.push(scanAbuseIPDB(ioc));
-            } else {
+            } else if (keys.abuseipdb && type !== 'ip') {
+                // For non-IP types, show info message
+                const abuseResults = document.getElementById('abuseipdbResults');
+                if (abuseResults) {
+                    abuseResults.innerHTML = '<div class="info-message">AbuseIPDB only supports IP addresses.</div>';
+                }
+                const abuseEmpty = document.getElementById('abuseipdbEmpty');
+                if (abuseEmpty) abuseEmpty.style.display = 'none';
+            } else if (!keys.abuseipdb && type === 'ip') {
                 showError('abuseipdb', 'AbuseIPDB API key not configured');
             }
             
@@ -1879,7 +1922,7 @@ Date:
                 }
                 const whoisEmpty = document.getElementById('whoisEmpty');
                 if (whoisEmpty) whoisEmpty.style.display = 'none';
-            } else {
+            } else if (type === 'domain' || type === 'url') {
                 showError('whois', 'WHOIS API key not configured');
             }
             
@@ -3343,6 +3386,131 @@ Date:
         // CORS Proxy (fallback when direct API calls fail)
         // Using corsproxy.io which supports custom headers
         const CORS_PROXY = 'https://corsproxy.io/?';
+        
+        // Worker API endpoint - routes through Cloudflare Worker to avoid CORS and protect API keys
+        const WORKER_API_URL = 'https://threatanalyzer-api.juanlunadevelop.workers.dev';
+        
+        // Scan via Worker API - aggregates all threat intelligence lookups
+        async function scanViaWorker(ioc, type) {
+            try {
+                console.log('Scanning via Worker API:', ioc, 'type:', type);
+                
+                // Build the correct route based on IOC type
+                let endpoint = '';
+                if (type === 'ip') {
+                    endpoint = `/scan/ip/${encodeURIComponent(ioc)}`;
+                } else if (type === 'domain') {
+                    endpoint = `/scan/domain/${encodeURIComponent(ioc)}`;
+                } else if (type === 'url') {
+                    endpoint = `/scan/url/${encodeURIComponent(ioc)}`;
+                } else {
+                    throw new Error('Unsupported IOC type for Worker API');
+                }
+                
+                const url = WORKER_API_URL + endpoint;
+                console.log('Worker API URL:', url);
+                
+                const response = await fetch(url, {
+                    method: 'GET',
+                    headers: {
+                        'Accept': 'application/json'
+                    }
+                });
+                
+                if (!response.ok) {
+                    if (response.status === 404) {
+                        throw new Error('IOC not found');
+                    }
+                    if (response.status === 429) {
+                        throw new Error('Rate limited - please wait and try again');
+                    }
+                    throw new Error(`Worker API error: ${response.status}`);
+                }
+                
+                const data = await response.json();
+                console.log('Worker API response:', data);
+                
+                // Handle error response from Worker
+                if (data.error) {
+                    throw new Error(data.error);
+                }
+                
+                // Store results in currentResults - Worker returns aggregated format
+                // Format: {virustotal: {...}, abuseipdb: {...}, urlscan: {...}, whois: {...}}
+                
+                // Process VirusTotal results
+                if (data.virustotal) {
+                    if (data.virustotal.error) {
+                        showError('vt', data.virustotal.error);
+                    } else {
+                        currentResults.vt = data.virustotal;
+                        renderVirusTotal(data.virustotal);
+                    }
+                }
+                
+                // Process AbuseIPDB results
+                if (data.abuseipdb) {
+                    if (data.abuseipdb.error) {
+                        showError('abuseipdb', data.abuseipdb.error);
+                    } else {
+                        currentResults.abuseipdb = data.abuseipdb;
+                        renderAbuseIPDB(data.abuseipdb);
+                    }
+                }
+                
+                // Process WHOIS results
+                if (data.whois) {
+                    if (data.whois.error) {
+                        showError('whois', data.whois.error);
+                    } else {
+                        currentResults.whois = data.whois;
+                        renderWhois(data.whois);
+                    }
+                }
+                
+                // Process URLScan results
+                if (data.urlscan) {
+                    if (data.urlscan.error) {
+                        showError('urlscan', data.urlscan.error);
+                    } else {
+                        currentResults.urlscan = data.urlscan;
+                        renderURLScan(data.urlscan);
+                    }
+                }
+                
+                // Update combined view
+                const combinedContainer = document.getElementById('combinedResults');
+                if (combinedContainer) {
+                    renderCombined();
+                }
+                
+                // Update SOC dashboard widgets if present
+                try {
+                    if (typeof updateReputationGrid === 'function') {
+                        updateReputationGrid(currentResults.vt, currentResults.abuseipdb, currentResults.whois, currentResults.urlscan);
+                    }
+                    if (typeof updateRightSidebar === 'function') {
+                        updateRightSidebar(currentResults.whois, currentResults.abuseipdb);
+                    }
+                } catch (e) {
+                    console.warn('SOC dashboard update failed:', e);
+                }
+                
+                return data;
+                
+            } catch (error) {
+                console.error('Worker API Error:', error);
+                showToast('Worker API error: ' + error.message, 'error');
+                
+                // Show errors for all services
+                showError('vt', 'Worker API unavailable - ' + error.message);
+                showError('abuseipdb', 'Worker API unavailable - ' + error.message);
+                showError('whois', 'Worker API unavailable - ' + error.message);
+                showError('urlscan', 'Worker API unavailable - ' + error.message);
+                
+                throw error;
+            }
+        }
         
         // TLD Risk Weights for threat scoring
         const TLD_RISK_WEIGHTS = {
