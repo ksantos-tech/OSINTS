@@ -179,107 +179,101 @@ export default {
             // If scan was submitted, get the result
             if (scanResult.uuid) {
               console.log("URLScan submitted, UUID:", scanResult.uuid);
-              
-              // Wait for the scan to complete (poll with retries)
-              const maxRetries = 15; // 15 retries for longer wait
-              const retryDelay = 2000; // 2 seconds between retries
-              let scanComplete = false;
+
+              const resultUrl = scanResult.result || scanResult.resultUrl;
               let finalResult = null;
-              
+              let summaryResult = null;
+
+              // Wait for scan completion using result endpoint first
+              const maxRetries = 15; // keep existing URLScan polling behavior
+              const retryDelay = 2000; // keep existing URLScan polling behavior
+
               for (let i = 0; i < maxRetries; i++) {
                 await new Promise(resolve => setTimeout(resolve, retryDelay));
                 console.log("URLScan poll attempt:", i + 1);
-                
-                // Use search API to get result
-                const resultResponse = await fetch(
-                  `https://urlscan.io/api/v1/search/?q=uuid:${scanResult.uuid}&size=1`,
-                  {
-                    headers: {
-                      "API-Key": urlscanKey,
-                      "Accept": "application/json"
+
+                // Primary: fetch from resultUrl endpoint when available
+                if (resultUrl) {
+                  try {
+                    const enrichResponse = await fetch(`${resultUrl}?format=json`, {
+                      headers: { "API-Key": urlscanKey, "Accept": "application/json" }
+                    });
+
+                    if (enrichResponse.ok) {
+                      const enrichedData = await enrichResponse.json();
+
+                      // Complete payload includes task/page/stats/verdicts
+                      if (enrichedData?.task || enrichedData?.page || enrichedData?.stats || enrichedData?.verdicts) {
+                        finalResult = enrichedData;
+                        console.log("URLScan complete via resultUrl endpoint");
+                        break;
+                      }
+                    }
+                  } catch (e) {
+                    // Keep polling fallback path below
+                  }
+                }
+
+                // Fallback: search API by UUID
+                try {
+                  const resultResponse = await fetch(
+                    `https://urlscan.io/api/v1/search/?q=uuid:${scanResult.uuid}&size=1`,
+                    {
+                      headers: {
+                        "API-Key": urlscanKey,
+                        "Accept": "application/json"
+                      }
+                    }
+                  );
+
+                  const resultData = await resultResponse.json();
+                  const searchResults = resultData.results;
+
+                  if (resultResponse.ok && searchResults && searchResults.length > 0) {
+                    const scanData = searchResults[0];
+                    if (scanData.task || scanData.page || scanData.stats || scanData.verdicts) {
+                      finalResult = scanData;
+                      console.log("URLScan complete via search endpoint");
+                      break;
                     }
                   }
-                );
-                
-                const resultData = await resultResponse.json();
-                console.log("URLScan response:", resultData);
-                
-                // Check if scan is complete - look for results array with data
-                // A complete result has properties in the results array
-                const results = resultData.results;
-                
-                if (resultResponse.ok && results && results.length > 0) {
-                  const scanData = results[0];
-                  // Check for actual scan data (not just submission)
-                  if (scanData.task || scanData.page || scanData.stats || scanData.verdicts) {
-                    scanComplete = true;
-                    finalResult = scanData;
-                    console.log("URLScan complete!");
-                    break;
-                  }
-                } else if (!resultResponse.ok) {
-                  console.log("URLScan response not OK, continuing...");
-                  continue;
-                } else {
-                  console.log("URLScan no results yet...");
-                  continue;
-                }
-              }
-              
-              if (scanComplete && finalResult) {
-                results.urlscan = finalResult;
-              } else {
-                // Extract essential fields from submission response
-                let domain = value;
-                try {
-                  if (value.startsWith('http')) {
-                    domain = new URL(value).hostname;
-                  }
-                } catch (e) {}
-                
-                // Try to fetch additional data from result URL
-                let enrichedData = null;
-                try {
-                  const resultUrl = scanResult.result;
-                  const enrichResponse = await fetch(resultUrl + '?format=json', {
-                    headers: { "API-Key": urlscanKey, "Accept": "application/json" }
-                  });
-                  if (enrichResponse.ok) {
-                    enrichedData = await enrichResponse.json();
-                  }
                 } catch (e) {
-                  // Failed to enrich, use submission data
+                  // Continue polling until retries exhausted
                 }
-                
-                // Build preview with top 5 essential fields
-                const verdict = enrichedData?.verdicts?.overall?.malicious 
-                  ? "malicious" 
-                  : enrichedData?.verdicts?.overall?.safe 
-                    ? "safe" 
-                    : enrichedData?.verdicts?.phishing 
-                      ? "phishing" 
-                      : "unknown";
-                
-                const status = enrichedData ? "complete" : "pending";
-                const scanTime = enrichedData?.task?.time 
-                  ? new Date(enrichedData.task.time).toISOString() 
-                  : null;
-                
-                results.urlscan = {
-                  // Top 5 essential fields
-                  verdict: verdict,
-                  status: status,
-                  url: scanResult.url || value,
-                  domain: domain,
-                  scannedAt: scanTime,
-                  // Additional data
-                  uuid: scanResult.uuid,
-                  resultUrl: scanResult.result,
-                  message: enrichedData ? "Scan completed" : "Scan submitted. Result pending...",
-                  // Full data if available
-                  _fullResult: enrichedData
-                };
               }
+
+              // Extract essential fields from completed result (if available)
+              let domain = value;
+              try {
+                domain = type === "url" ? new URL(value).hostname : value;
+              } catch (e) {}
+
+              const verdict = finalResult?.verdicts?.overall?.malicious
+                ? "malicious"
+                : finalResult?.verdicts?.overall?.safe
+                  ? "safe"
+                  : finalResult?.verdicts?.phishing
+                    ? "phishing"
+                    : "unknown";
+
+              const status = finalResult ? "complete" : (scanResult.status || "pending");
+              const scanTime = finalResult?.task?.time
+                ? new Date(finalResult.task.time).toISOString()
+                : null;
+
+              summaryResult = {
+                verdict,
+                status,
+                url: finalResult?.page?.url || scanResult.url || (value.startsWith("http") ? value : `https://${value}`),
+                domain: finalResult?.page?.domain || domain,
+                scannedAt: scanTime,
+                uuid: scanResult.uuid,
+                resultUrl: resultUrl,
+                message: finalResult ? "Scan completed" : "Scan submitted. Result pending...",
+                _fullResult: finalResult
+              };
+
+              results.urlscan = summaryResult;
             } else {
               results.urlscan = scanResult;
             }
