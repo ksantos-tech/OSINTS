@@ -13,45 +13,33 @@ export default {
 
     const url = new URL(request.url);
     const path = url.pathname;
+    const value = url.searchParams.get("value");
 
-    // Route: /scan/ip, /scan/domain, /scan/url
-    const ipMatch = path.match(/^\/scan\/ip\/(.+)$/);
-    const domainMatch = path.match(/^\/scan\/domain\/(.+)$/);
-    const urlMatch = path.match(/^\/scan\/url\/(.+)$/);
-
-    let type = null;
-    let value = null;
-
-    if (ipMatch) {
-      type = "ip";
-      value = decodeURIComponent(ipMatch[1]);
-    } else if (domainMatch) {
-      type = "domain";
-      value = decodeURIComponent(domainMatch[1]);
-    } else if (urlMatch) {
-      type = "url";
-      value = decodeURIComponent(urlMatch[1]);
+    // Route: /scan?value=<ioc>
+    if (path !== "/scan" || !value) {
+      return json({ error: "Use /scan?value=<ioc>" }, 400);
     }
 
-    if (!type || !value) {
-      return json({ error: "Invalid route. Use /scan/ip/:value, /scan/domain/:value, or /scan/url/:value" }, 400);
+    // Auto-detect IOC type from value
+    const type = detectIOCType(value);
+
+    if (type === "unknown") {
+      return json({ error: "Unable to detect IOC type. Provide a valid IP, URL, or domain." }, 400);
     }
 
     try {
       let results = {};
 
-      // VIRUSTOTAL
+      // VIRUSTOTAL - supports IP, domain, URL
       if (type === "ip" || type === "domain" || type === "url") {
         let vtEndpoint = "";
 
         if (type === "ip") {
           vtEndpoint = `https://www.virustotal.com/api/v3/ip_addresses/${value}`;
-        }
-        if (type === "domain") {
+        } else if (type === "domain") {
           vtEndpoint = `https://www.virustotal.com/api/v3/domains/${value}`;
-        }
-
-        if (type === "url") {
+        } else if (type === "url") {
+          // Encode URL for VT (base64 without padding)
           const encoded = btoa(value);
           vtEndpoint = `https://www.virustotal.com/api/v3/urls/${encoded}`;
         }
@@ -72,7 +60,7 @@ export default {
         }
       }
 
-      // ABUSEIPDB
+      // ABUSEIPDB - only supports IP addresses
       if (type === "ip") {
         if (env.ABUSEIPDB_KEY) {
           try {
@@ -94,7 +82,7 @@ export default {
         }
       }
 
-      // WHOIS
+      // WHOIS - only supports domains
       if (type === "domain") {
         if (env.WHOIS_API_KEY) {
           try {
@@ -115,7 +103,7 @@ export default {
         }
       }
 
-      // URLSCAN
+      // URLSCAN - supports URLs and domains
       if (type === "url" || type === "domain") {
         if (env.URLSCAN_KEY) {
           try {
@@ -138,7 +126,7 @@ export default {
             
             // If scan was submitted, get the result
             if (scanResult.uuid) {
-              // Wait a moment for the scan to complete
+              // Wait for the scan to complete
               await new Promise(resolve => setTimeout(resolve, 2000));
               
               const resultResponse = await fetch(
@@ -162,6 +150,7 @@ export default {
         }
       }
 
+      // Return aggregated response
       return json({
         ioc: value,
         type: type,
@@ -176,6 +165,38 @@ export default {
     }
   }
 };
+
+// Detect IOC type from value
+function detectIOCType(value) {
+  value = value.trim();
+  
+  // URL detection
+  if (/^https?:\/\//i.test(value)) {
+    return "url";
+  }
+  
+  // IPv4 detection
+  if (/^\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}$/.test(value)) {
+    return "ip";
+  }
+  
+  // IPv6 detection
+  if (/^([a-f0-9]{0,4}:){2,7}[a-f0-9]{0,4}$/i.test(value)) {
+    return "ip";
+  }
+  
+  // Hash detection (MD5, SHA1, SHA256)
+  if (/^[a-f0-9]{32}$/i.test(value)) return "hash";
+  if (/^[a-f0-9]{40}$/i.test(value)) return "hash";
+  if (/^[a-f0-9]{64}$/i.test(value)) return "hash";
+  
+  // Domain detection
+  if (/^[a-z0-9]([a-z0-9-]*[a-z0-9])?(\.[a-z0-9]([a-z0-9-]*[a-z0-9])?)+$/i.test(value)) {
+    return "domain";
+  }
+  
+  return "unknown";
+}
 
 function json(data, status = 200) {
   return new Response(JSON.stringify(data), {

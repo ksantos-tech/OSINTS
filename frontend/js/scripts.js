@@ -1856,14 +1856,7 @@ Date:
 
             // Use Worker API to aggregate all threat intelligence lookups
             // This avoids CORS issues and protects API keys
-            try {
-                await scanViaWorker(ioc, type);
-            } catch (error) {
-                console.error('Worker scan failed:', error);
-                // If Worker fails, try legacy direct API calls as fallback
-                console.log('Falling back to direct API calls...');
-                await startSingleScanLegacy(input, type);
-            }
+            await scanViaWorker(ioc, type);
             
             // Render combined view if active
             const combinedTab = document.getElementById('combinedTab');
@@ -1969,7 +1962,7 @@ Date:
             }
         }
 
-        // Bulk IOC Scan
+        // Bulk IOC Scan - now uses Worker API
         async function startBulkScan(input) {
             // First split by newlines
             const lines = input.split(/\r?\n/);
@@ -1998,12 +1991,6 @@ Date:
                 showToast(' Tip: For a single IOC, switch to Single IOC mode for detailed results!', 'info');
             }
 
-            const keys = getKeys();
-            if (!keys.vt) {
-                alert('VirusTotal API key is required for bulk scanning');
-                return;
-            }
-
             // Initialize bulk results
             bulkResults = [];
             bulkScanProgress = 0;
@@ -2020,102 +2007,43 @@ Date:
                 return new Promise(resolve => setTimeout(resolve, ms));
             }
 
-            // Process each IOC
-            async function processIOC(ioc, type, keys) {
-                // Process all API calls in parallel for better performance
-                const [vtResult, abuseResult, whoisResult] = await Promise.all([
-                    // Get VirusTotal result
-                    (async () => {
-                        try {
-                            return { result: await scanVirusTotalBulk(ioc, type, keys.vt), error: null };
-                        } catch (e) {
-                            return { result: null, error: e.message };
-                        }
-                    })(),
-                    // Get AbuseIPDB result
-                    (async () => {
-                        if (type === 'hash' || !keys.abuseipdb) {
-                            return { result: null, error: null };
-                        }
-                        let ipToQuery = ioc;
-                        try {
-                            if (type === 'domain' || type === 'url') {
-                                const domain = extractDomain(ioc);
-                                const resolvedIP = await resolveDNS(domain);
-                                if (resolvedIP) {
-                                    ipToQuery = resolvedIP;
-                                }
-                            }
-                            if (type === 'ip' || type === 'domain' || type === 'url') {
-                                const result = await scanAbuseIPDBBulk(ipToQuery, keys.abuseipdb);
-                                return { result, error: null };
-                            }
-                            return { result: null, error: null };
-                        } catch (e) {
-                            return { result: null, error: e.message };
-                        }
-                    })(),
-                    // Get WHOIS result
-                    (async () => {
-                        if (!keys.whois) {
-                            return { result: null, error: null };
-                        }
-                        try {
-                            if (type === 'domain' || type === 'url') {
-                                const result = await scanWhoisBulk(ioc, keys.whois);
-                                return { result, error: null };
-                            } else if (type === 'ip') {
-                                return { result: { notAvailable: 'WHOIS is not available for IP addresses' }, error: null };
-                            }
-                            return { result: null, error: null };
-                        } catch (e) {
-                            return { result: null, error: e.message };
-                        }
-                    })()
-                ]);
-                
-                const vtError = vtResult.error;
-                const abuseError = abuseResult.error;
-                const whoisError = whoisResult.error;
-                
-                return {
-                    vtResult: vtResult.result,
-                    vtError,
-                    abuseResult: abuseResult.result,
-                    abuseError,
-                    whoisResult: whoisResult.result,
-                    whoisError,
-                    status: (vtError && !vtResult.result) ? 'error' : 'success'
-                };
-            }
-
-            // Process each IOC
+            // Process each IOC via Worker API
             for (let i = 0; i < validIocs.length; i++) {
                 const ioc = validIocs[i];
-                const type = detectIOCType(ioc);
                 
-                // Process with retry logic
-                const { vtResult, vtError, abuseResult, abuseError, whoisResult, whoisError } = await processIOC(ioc, type, keys);
-                
-                bulkResults.push({
-                    ioc: ioc,
-                    type: type,
-                    vt: vtResult,
-                    vtError: vtError,
-                    abuseipdb: abuseResult,
-                    abuseError: abuseError,
-                    whois: whoisResult,
-                    whoisError: whoisError,
-                    status: (vtError && !vtResult) ? 'error' : 'success'
-                });
+                try {
+                    // Call Worker API for each IOC
+                    const url = WORKER_API_URL + '/scan?value=' + encodeURIComponent(ioc);
+                    const response = await fetch(url);
+                    const data = await response.json();
+                    
+                    bulkResults.push({
+                        ioc: ioc,
+                        type: data.type || detectIOCType(ioc),
+                        vt: data.virustotal,
+                        abuseipdb: data.abuseipdb,
+                        whois: data.whois,
+                        urlscan: data.urlscan,
+                        status: data.error ? 'error' : 'success'
+                    });
+                } catch (error) {
+                    console.error('Worker bulk scan error:', error);
+                    bulkResults.push({
+                        ioc: ioc,
+                        type: detectIOCType(ioc),
+                        vt: { error: error.message },
+                        abuseipdb: null,
+                        whois: null,
+                        urlscan: null,
+                        status: 'error'
+                    });
+                }
                 
                 bulkScanProgress = i + 1;
-                renderBulkProgress(bulkScanProgress, iocs.length);
+                renderBulkProgress(bulkScanProgress, validIocs.length);
                 
                 // Rate limiting: wait between requests to avoid blocking
-                // VirusTotal free tier allows ~4 requests per minute
-                // Add a delay of 1.5 seconds between each request
-                if (i < iocs.length - 1) {
+                if (i < validIocs.length - 1) {
                     await sleep(1500);
                 }
             }
@@ -3395,19 +3323,8 @@ Date:
             try {
                 console.log('Scanning via Worker API:', ioc, 'type:', type);
                 
-                // Build the correct route based on IOC type
-                let endpoint = '';
-                if (type === 'ip') {
-                    endpoint = `/scan/ip/${encodeURIComponent(ioc)}`;
-                } else if (type === 'domain') {
-                    endpoint = `/scan/domain/${encodeURIComponent(ioc)}`;
-                } else if (type === 'url') {
-                    endpoint = `/scan/url/${encodeURIComponent(ioc)}`;
-                } else {
-                    throw new Error('Unsupported IOC type for Worker API');
-                }
-                
-                const url = WORKER_API_URL + endpoint;
+                // Use single endpoint that auto-detects IOC type
+                const url = WORKER_API_URL + '/scan?value=' + encodeURIComponent(ioc);
                 console.log('Worker API URL:', url);
                 
                 const response = await fetch(url, {
