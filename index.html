@@ -1,0 +1,553 @@
+﻿<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ThreatAnalyzer by KS</title>
+    <link rel="icon" type="image/png" href="mainlogo.png">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <link rel=stylesheet href=css/styles.css>
+    <link rel=stylesheet href=css/modern-theme.css>
+</head>
+<body>
+    <!-- Header -->
+    <header class="header">
+        <div class="header-brand">
+            <img src="mainlogo.png" alt="ThreatAnalyzer" class="logo" style="width: 110px; height: 120px; object-fit: contain;">
+            <div class="header-brand-text">
+                <h1 style="font-size: 28px; font-weight: 700; margin: 0; color: var(--text-primary);">ThreatAnalyzer</h1>
+                <span class="header-tagline" style="font-size: 14px;">Cybersecurity Investigation &amp; Threat Intelligence Platform</span>
+                <span class="header-version">v1.2  Built by <a href="https://www.linkedin.com/in/ksantos-tech/" target="_blank">KS</a></span>
+            </div>
+        </div>
+        <div class="header-right">
+            <!-- Theme Toggle -->
+            <div class="theme-toggle" onclick="toggleTheme()" title="Toggle Dark/Light Mode">
+                <div class="theme-toggle-track">
+                    <div class="theme-toggle-thumb">
+                        <span id="themeIcon">☀️</span>
+                    </div>
+                </div>
+            </div>
+            <div class="api-status">
+                <span class="status-dot" id="vtStatus"></span>
+                <span>VT</span>
+                <span class="status-dot" id="abuseipdbStatus"></span>
+                <span>AbuseIPDB</span>
+                <span class="status-dot" id="whoisStatus"></span>
+                <span>WHOIS</span>
+                <span class="status-dot" id="urlscanStatus"></span>
+                <span>URLScan</span>
+            </div>
+            <button class="btn" onclick="openSettings()">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
+                    <path d="M19.14 12.94c.04-.31.06-.63.06-.94 0-.31-.02-.63-.06-.94l2.03-1.58c.18-.14.23-.41.12-.61l-1.92-3.32c-.12-.22-.37-.29-.59-.22l-2.39.96c-.5-.38-1.03-.7-1.62-.94l-.36-2.54c-.04-.24-.24-.41-.48-.41h-3.84c-.24 0-.43.17-.47.41l-.36 2.54c-.59.24-1.13.57-1.62.94l-2.39-.96c-.22-.08-.47 0-.59.22L2.74 8.87c-.12.21-.08.47.12.61l2.03 1.58c-.04.31-.06.63-.06.94s.02.63.06.94l-2.03 1.58c-.18.14-.23.41-.12.61l1.92 3.32c.12.22.37.29.59.22l2.39-.96c.5.38 1.03.7 1.62.94l.36 2.54c.05.24.24.41.48.41h3.84c.24 0 .44-.17.47-.41l.36-2.54c.59-.24 1.13-.56 1.62-.94l2.39.96c.22.08.47 0 .59-.22l1.92-3.32c.12-.22.07-.47-.12-.61l-2.01-1.58zM12 15.6c-1.98 0-3.6-1.62-3.6-3.6s1.62-3.6 3.6-3.6 3.6 1.62 3.6 3.6-1.62 3.6-3.6 3.6z"/>
+                </svg>
+                Settings
+            </button>
+            <button class="btn" onclick="openFAQs()" style="background: var(--accent-blue); color: white;">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
+                    <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 17h-2v-2h2v2zm2.07-7.75l-.9.92C13.45 12.9 13 13.5 13 15h-2v-.5c0-1.1.45-2.1 1.17-2.83l1.24-1.26c.37-.36.59-.86.59-1.41 0-1.1-.9-2-2-2s-2 .9-2 2H8c0-2.21 1.79-4 4-4s4 1.79 4 4c0 .88-.36 1.68-.93 2.25z"/>
+                </svg>
+                FAQs
+            </button>
+            <button class="btn" onclick="openAbout()">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
+                    <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 15h-2v-6h2v6zm0-8h-2V7h2v2z"/>
+                </svg>
+                About
+            </button>
+        </div>
+    </header>
+
+    <!-- Main Container -->
+    <div class="main-container">
+        <!-- Toast Container -->
+        <div class="toast-container" id="toastContainer"></div>
+        <!-- Sidebar -->
+        <aside class="sidebar">
+            <div class="mode-toggle">
+                <button class="mode-btn active" data-mode="single" onclick="setScanMode('single')"> Single IOC</button>
+                <button class="mode-btn" data-mode="bulk" onclick="setScanMode('bulk')"> Bulk IOCs</button>
+            </div>
+            <div class="input-group">
+                <label>Indicator</label>
+                <textarea id="iocInput" placeholder="Enter URL, IP, Domain, or Hash (MD5/SHA1/SHA256)"></textarea>
+                <small class="bulk-hint" style="display:none; color: var(--text-muted);">Enter one IOC per line (max 100 IOCs)</small>
+            </div>
+            <div class="input-group">
+                <label>Type</label>
+                <select id="iocType">
+                    <option value="auto"> Auto-detect</option>
+                    <option value="url"> URL</option>
+                    <option value="ip"> IP Address</option>
+                    <option value="domain"> Domain</option>
+                    <option value="hash"># File Hash</option>
+                </select>
+            </div>
+            <button class="btn btn-primary scan-btn" onclick="startScan()" style="background: var(--accent-blue); width: 100%;">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor">
+                    <path d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19l-4.99-5zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14z"/>
+                </svg>
+                Investigate
+            </button>
+
+            <!-- Workspace Actions -->
+            <div class="workspace-actions" style="display: flex; gap: 8px; margin-top: 12px; flex-wrap: wrap;">
+                <button class="btn btn-secondary" onclick="addToWorkspace()" style="flex: 1; min-width: 80px; font-size: 11px; padding: 6px 8px;" title="Add current IOC to workspace">
+                     Add IOC
+                </button>
+                <button class="btn btn-secondary" onclick="exportWorkspaceReport()" style="flex: 1; min-width: 80px; font-size: 11px; padding: 6px 8px;" title="Export workspace data">
+                     Export
+                </button>
+                <button class="btn btn-secondary" onclick="clearWorkspace()" style="flex: 1; min-width: 80px; font-size: 11px; padding: 6px 8px;" title="Clear workspace">
+                     Clear
+                </button>
+                <button class="btn btn-secondary" onclick="openSummaryModal()" style="flex: 1; min-width: 80px; font-size: 11px; padding: 6px 8px; background: var(--accent-purple); color: white;" title="Generate investigation summary">
+                     Summary
+                </button>
+            </div>
+
+            <div class="recent-scans">
+                <h3>Recent Scans</h3>
+                <div class="recent-list" id="recentList">
+                    <div class="empty-state" style="padding: 20px;">
+                        <span>No recent scans</span>
+                    </div>
+                </div>
+            </div>
+        </aside>
+
+        <!-- Results Panel -->
+        <main class="results-panel">
+            <div class="results-tabs">
+                <button class="tab-btn active" data-tab="vt" onclick="switchTab('vt')"> VirusTotal</button>
+                <button class="tab-btn" data-tab="abuseipdb" onclick="switchTab('abuseipdb')"> AbuseIPDB</button>
+                <button class="tab-btn" data-tab="whois" onclick="switchTab('whois')"> WHOIS</button>
+                <button class="tab-btn" data-tab="urlscan" onclick="switchTab('urlscan')"> URLScan</button>
+                <button class="tab-btn" data-tab="combined" onclick="switchTab('combined')"> Combined Results & Analysis</button>
+                <button class="tab-btn bulk-tab" data-tab="bulk" onclick="switchTab('bulk')" style="display:none;"> Bulk</button>
+                <button class="tab-btn" data-tab="ipquery" onclick="switchTab('ipquery')"> Quick Query</button>
+                <button class="tab-btn" data-tab="notes" onclick="switchTab('notes')"> Notes</button>
+            </div>
+
+            <div id="vtTab" class="tab-content active">
+                <div class="empty-state" id="vtEmpty">
+                    <svg viewBox="0 0 24 24" fill="currentColor">
+                        <path d="M12 1L3 5v6c0 5.55 3.84 10.74 9 12 5.16-1.26 9-6.45 9-12V5l-9-4zm0 10.99h7c-.53 4.12-3.28 7.79-7 8.94V12H5V6.3l7-3.11v8.8z"/>
+                    </svg>
+                    <span>Enter an IOC and click Scan to view VirusTotal results</span>
+                </div>
+                <div id="vtResults"></div>
+            </div>
+
+            <div id="abuseipdbTab" class="tab-content">
+                <div class="empty-state" id="abuseipdbEmpty">
+                    <svg viewBox="0 0 24 24" fill="currentColor">
+                        <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-1 17.93c-3.95-.49-7-3.85-7-7.93 0-.62.08-1.21.21-1.79L9 15v1c0 1.1.9 2 2 2v1.93zm6.9-2.54c-.26-.81-1-1.39-1.9-1.39h-1v-3c0-.55-.45-1-1-1H8v-2h2c.55 0 1-.45 1-1V7h2c1.1 0 2-.9 2-2v-.41c2.93 1.19 5 4.06 5 7.41 0 2.08-.8 3.97-2.1 5.39z"/>
+                    </svg>
+                    <span>Enter an IP address and click Scan to view AbuseIPDB results</span>
+                </div>
+                <div id="abuseipdbResults"></div>
+            </div>
+
+            <div id="whoisTab" class="tab-content">
+                <div class="empty-state" id="whoisEmpty">
+                    <svg viewBox="0 0 24 24" fill="currentColor">
+                        <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 15h-2v-6h2v6zm0-8h-2V7h2v2z"/>
+                    </svg>
+                    <span>Enter a domain or IP to view WHOIS information</span>
+                </div>
+                <div id="whoisResults"></div>
+            </div>
+
+            <div id="urlscanTab" class="tab-content">
+                <div class="empty-state" id="urlscanEmpty">
+                    <svg viewBox="0 0 24 24" fill="currentColor">
+                        <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-1 17.93c-3.95-.49-7-3.85-7-7.93 0-.62.08-1.21.21-1.79L9 15v1c0 1.1.9 2 2 2v1.93zm6.9-2.54c-.26-.81-1-1.39-1.9-1.39h-1v-3c0-.55-.45-1-1-1H8v-2h2c.55 0 1-.45 1-1V7h2c1.1 0 2-.9 2-2v-.41c2.93 1.19 5 4.06 5 7.41 0 2.08-.8 3.97-2.1 5.39z"/>
+                    </svg>
+                    <span>Enter a URL or domain to view URLScan analysis</span>
+                </div>
+                <div id="urlscanResults"></div>
+            </div>
+
+            <div id="combinedTab" class="tab-content">
+                <div id="combinedResults"></div>
+            </div>
+
+            <div id="ipqueryTab" class="tab-content">
+                <div class="ip-query-section">
+                    <h3 style="font-size: 16px; margin-bottom: 20px; color: var(--text-primary);">
+                        <svg width="20" height="20" viewBox="0 0 24 24" fill="var(--accent-blue)" style="vertical-align: middle; margin-right: 8px;">
+                            <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-1 17.93c-3.95-.49-7-3.85-7-7.93 0-.62.08-1.21.21-1.79L9 15v1c0 1.1.9 2 2 2v1.93zm6.9-2.54c-.26-.81-1-1.39-1.9-1.39h-1v-3c0-.55-.45-1-1-1H8v-2h2c.55 0 1-.45 1-1V7h2c1.1 0 2-.9 2-2v-.41c2.93 1.19 5 4.06 5 7.41 0 2.08-.8 3.97-2.1 5.39z"/>
+                        </svg>
+                        SIEM / EDR Query Generator
+                    </h3>
+
+                    <div class="input-group">
+                        <label>SIEM / EDR Platform</label>
+                        <select id="siemPlatform" onchange="generateQuery()">
+                            <option value="kibana">Kibana (KQL)</option>
+                            <option value="sentinel">Microsoft Sentinel (KQL)</option>
+                            <option value="crowdstrike">Crowdstrike (FQL)</option>
+                            <option value="cortex">Cortex (Lucene)</option>
+                            <option value="splunk">Splunk (SPL)</option>
+                            <option value="sentinelone">SentinelOne (S1QL)</option>
+                            <option value="qradar">IBM QRadar (AQL)</option>
+                            <option value="exabeam">Exabeam</option>
+                            <option value="logrhythm">LogRhythm</option>
+                            <option value="paloalto">Palo Alto X-SIAM (XQL)</option>
+                            <option value="sumologic">Sumo Logic</option>
+                            <option value="solarwinds">SolarWinds SIEM</option>
+                            <option value="alienvault">AlienVault (AT&T Cybersecurity)</option>
+                        </select>
+                    </div>
+
+                    <div class="input-group">
+                        <label>IP Addresses (one per line, supports 500+)</label>
+                        <textarea id="ipQueryInput" placeholder="Enter IP addresses, one per line...&#10;Example:&#10;192.168.1.1&#10;10.0.0.1&#10;172.16.0.1" oninput="generateQuery()"></textarea>
+                        <div class="ip-count">IP Count: <strong id="ipCount">0</strong></div>
+                    </div>
+
+                    <div class="input-group">
+                        <label class="ip-option-label">IP Field Selection</label>
+                        <div class="ip-option-group">
+                            <label class="radio-option selected" onclick="selectIPOption(this, 'source')">
+                                <input type="radio" name="ipField" value="source" checked>
+                                <span class="radio-custom"></span>
+                                <span>Source IP Only</span>
+                            </label>
+                            <label class="radio-option" onclick="selectIPOption(this, 'destination')">
+                                <input type="radio" name="ipField" value="destination">
+                                <span class="radio-custom"></span>
+                                <span>Destination IP Only</span>
+                            </label>
+                            <label class="radio-option" onclick="selectIPOption(this, 'both')">
+                                <input type="radio" name="ipField" value="both">
+                                <span class="radio-custom"></span>
+                                <span>Both (Source & Destination)</span>
+                            </label>
+                        </div>
+                    </div>
+
+                    <div class="input-group">
+                        <label>Port Filter (optional)</label>
+                        <select id="portSelect" onchange="generateQuery()">
+                            <option value="">No port filter</option>
+                            <optgroup label="Common Ports">
+                                <option value="80">HTTP (80)</option>
+                                <option value="443">HTTPS (443)</option>
+                                <option value="22">SSH (22)</option>
+                                <option value="21">FTP (21)</option>
+                                <option value="25">SMTP (25)</option>
+                                <option value="53">DNS (53)</option>
+                                <option value="3389">RDP (3389)</option>
+                                <option value="3306">MySQL (3306)</option>
+                                <option value="5432">PostgreSQL (5432)</option>
+                                <option value="6379">Redis (6379)</option>
+                                <option value="27017">MongoDB (27017)</option>
+                            </optgroup>
+                            <optgroup label="Other Ports">
+                                <option value="23">Telnet (23)</option>
+                                <option value="110">POP3 (110)</option>
+                                <option value="143">IMAP (143)</option>
+                                <option value="445">SMB (445)</option>
+                                <option value="389">LDAP (389)</option>
+                                <option value="636">LDAPS (636)</option>
+                                <option value="137">NetBIOS-NS (137)</option>
+                                <option value="138">NetBIOS-DGM (138)</option>
+                                <option value="139">NetBIOS-SSN (139)</option>
+                                <option value="161">SNMP (161)</option>
+                                <option value="162">SNMP Trap (162)</option>
+                                <option value="514">Syslog (514)</option>
+                                <option value="587">SMTP Submission (587)</option>
+                                <option value="993">IMAPS (993)</option>
+                                <option value="995">POP3S (995)</option>
+                                <option value="1433">MSSQL (1433)</option>
+                                <option value="1521">Oracle (1521)</option>
+                                <option value="5900">VNC (5900)</option>
+                                <option value="8080">HTTP Proxy (8080)</option>
+                                <option value="8443">HTTPS Alt (8443)</option>
+                            </optgroup>
+                        </select>
+                    </div>
+
+                    <div class="input-group">
+                        <label class="ip-option-label">Port Field</label>
+                        <div class="ip-option-group">
+                            <label class="radio-option selected" onclick="selectPortField(this, 'noport')">
+                                <input type="radio" name="portField" value="noport" checked>
+                                <span class="radio-custom"></span>
+                                <span>No Port</span>
+                            </label>
+                            <label class="radio-option" onclick="selectPortField(this, 'dstport')">
+                                <input type="radio" name="portField" value="dstport">
+                                <span class="radio-custom"></span>
+                                <span>Destination Port</span>
+                            </label>
+                            <label class="radio-option" onclick="selectPortField(this, 'srcport')">
+                                <input type="radio" name="portField" value="srcport">
+                                <span class="radio-custom"></span>
+                                <span>Source Port</span>
+                            </label>
+                            <label class="radio-option" onclick="selectPortField(this, 'bothport')">
+                                <input type="radio" name="portField" value="bothport">
+                                <span class="radio-custom"></span>
+                                <span>Both Ports</span>
+                            </label>
+                        </div>
+                    </div>
+
+                    <div class="query-preview">
+                        <div class="query-preview-header">
+                            <h4>Generated Query</h4>
+                            <button class="btn btn-sm" onclick="copyQuery()">
+                                <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor">
+                                    <path d="M16 1H4c-1.1 0-2 .9-2 2v14h2V3h12V1zm3 4H8c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h11c1.1 0 2-.9 2-2V7c0-1.1-.9-2-2-2zm0 16H8V7h11v14z"/>
+                                </svg>
+                                Copy
+                            </button>
+                        </div>
+                        <textarea class="query-output" id="queryOutput" readonly>Enter IP addresses above to generate a query...</textarea>
+                    </div>
+
+                    <div class="query-actions">
+                        <button class="btn btn-primary" onclick="generateQuery()">
+                            <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
+                                <path d="M17.65 6.35C16.2 4.9 14.21 4 12 4c-4.42 0-7.99 3.58-7.99 8s3.57 8 7.99 8c3.73 0 6.84-2.55 7.73-6h-2.08c-.82 2.33-3.04 4-5.65 4-3.31 0-6-2.69-6-6s2.69-6 6-6c1.66 0 3.14.69 4.22 1.78L13 11h7V4l-2.35 2.35z"/>
+                            </svg>
+                            Generate Query
+                        </button>
+                        <button class="btn" onclick="clearIPQuery()">
+                            <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
+                                <path d="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/>
+                            </svg>
+                            Clear
+                        </button>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Investigation Notes Tab -->
+            <div id="notesTab" class="tab-content">
+                <div class="investigation-notes">
+                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px;">
+                        <h3 style="font-size: 16px; color: var(--text-primary); margin: 0;">
+                            <svg width="20" height="20" viewBox="0 0 24 24" fill="var(--accent-blue)" style="vertical-align: middle; margin-right: 8px;">
+                                <path d="M3 17.25V21h3.75L17.81 9.94l-3.75-3.75L3 17.25zM20.71 7.04c.39-.39.39-1.02 0-1.41l-2.34-2.34c-.39-.39-1.02-.39-1.41 0l-1.83 1.83 3.75 3.75 1.83-1.83z"/>
+                            </svg>
+                            Investigation Notes
+                        </h3>
+                        <span id="notesStatus" style="color: var(--text-muted); font-size: 12px;"></span>
+                    </div>
+                    <!-- Timestamp Toolbar -->
+                    <div style="display: flex; gap: 12px; align-items: center; margin-bottom: 12px; flex-wrap: wrap;">
+                        <label style="color: var(--text-secondary); font-size: 13px;">Timezone:</label>
+                        <select id="timezoneSelector" onchange="saveTimezonePreference()" style="background: var(--bg-tertiary); color: var(--text-primary); border: 1px solid var(--border-color); border-radius: 6px; padding: 6px 10px; font-size: 13px; cursor: pointer;">
+                            <option value="UTC">UTC  Coordinated Universal Time</option>
+                            <option value="Local">Local Time (Browser Time)</option>
+                            <option value="CET">CET  Central European Time</option>
+                            <option value="EST">EST  Eastern Standard Time</option>
+                            <option value="PST">PST  Pacific Standard Time</option>
+                            <option value="GMT+1">GMT+1  Western Europe</option>
+                            <option value="GMT+2">GMT+2  Eastern Europe</option>
+                            <option value="GMT+3">GMT+3  Middle East</option>
+                            <option value="GMT+4">GMT+4  Gulf Region</option>
+                            <option value="GMT+5">GMT+5  South Asia</option>
+                            <option value="GMT+6">GMT+6  Central Asia</option>
+                            <option value="GMT+7">GMT+7  Southeast Asia</option>
+                            <option value="GMT+8">GMT+8  Philippines, Singapore, East Asia</option>
+                            <option value="GMT+9">GMT+9  Japan / Korea</option>
+                            <option value="GMT+10">GMT+10  Australia Eastern</option>
+                        </select>
+                        <button class="btn" onclick="insertTimestamp()" title="Insert timestamp (Ctrl+3)">
+                             Insert Timestamp
+                        </button>
+                        <button class="btn" onclick="copyNotes()">
+                             Copy Notes
+                        </button>
+                        <button class="btn" onclick="exportNotes()">
+                             Export TXT
+                        </button>
+                        <select id="templateSelector" style="background: var(--bg-tertiary); color: var(--text-primary); border: 1px solid var(--border-color); border-radius: 6px; padding: 6px 10px; font-size: 13px; cursor: pointer;">
+                            <option value="">Select Alert Type</option>
+                            <option value="phishing">Phishing Investigation</option>
+                            <option value="appattack">Public-Facing Application Attack</option>
+                            <option value="process">Abnormal Process Execution</option>
+                            <option value="credential">Credential Login / Identity</option>
+                            <option value="dlp">Data Security / DLP</option>
+                            <option value="malware">Malware Detection</option>
+                            <option value="network">Suspicious Network Activity</option>
+                            <option value="endpoint">Endpoint Security</option>
+                            <option value="cloud">Cloud Security Alert</option>
+                            <option value="generic">Generic Security Investigation</option>
+                        </select>
+                        <button class="btn" onclick="insertTemplate()">
+                             Insert Template
+                        </button>
+                        <button class="btn" onclick="clearNotes()" style="color: var(--accent-red);" title="Clear all notes">
+                             Clear Text
+                        </button>
+                    </div>
+                    <textarea id="investigationNotes" 
+                        placeholder="Write investigation notes here...
+
+[2026-03-08 13:44:21 UTC] Investigation started
+[2026-03-08 13:45:10 UTC] IOC detected: 130.12.180.34
+[2026-03-08 13:46:30 UTC] VirusTotal detected 15 malicious vendors
+
+Use timestamps to track events. Press Ctrl+3 for quick timestamp."
+                        style="width: 100%; height: 400px; resize: vertical; font-family: 'Consolas', 'Monaco', monospace; font-size: 13px; background: #0d1117; color: #e6edf3; border: 1px solid #30363d; border-radius: 8px; padding: 12px; line-height: 1.5;"></textarea>
+                </div>
+            </div>
+
+            <div class="export-bar" id="exportBar" style="display: none;">
+                <button class="btn btn-success" onclick="if (bulkResults.length > 0) { exportBulkCSV(); } else { exportCSV(); }">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
+                        <path d="M19 9h-4V3H9v6H5l7 7 7-7zM5 18v2h14v-2H5z"/>
+                    </svg>
+                    Export CSV
+                </button>
+                <button class="btn" onclick="if (bulkResults.length > 0) { exportBulkTXT(); } else { exportTXT(); }">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
+                        <path d="M14 2H6c-1.1 0-1.99.9-1.99 2L4 20c0 1.1.89 2 1.99 2H18c1.1 0 2-.9 2-2V8l-6-6zm2 16H8v-2h8v2zm0-4H8v-2h8v2zm-3-5V3.5L18.5 9H13z"/>
+                    </svg>
+                    Export TXT
+                </button>
+            </div>
+        </main>
+    </div>
+
+    <!-- Settings Modal -->
+    <div class="modal-overlay" id="settingsModal">
+        <div class="modal">
+            <div class="modal-header">
+                <h2>API Settings</h2>
+                <button class="modal-close" onclick="closeSettings()">&times;</button>
+            </div>
+            <div class="modal-body">
+                <div class="input-group">
+                    <label>VirusTotal API Key</label>
+                    <input type="password" id="vtApiKey" placeholder="Enter your VirusTotal API key">
+                    <small style="color: var(--text-muted);">Get your key from <a href="https://www.virustotal.com/gui/join-us" target="_blank" style="color: var(--accent-blue);">virustotal.com</a></small>
+                </div>
+                <div class="input-group">
+                    <label>AbuseIPDB API Key</label>
+                    <input type="password" id="abuseipdbApiKey" placeholder="Enter your AbuseIPDB API key">
+                    <small style="color: var(--text-muted);">Get your key from <a href="https://www.abuseipdb.com/account/api" target="_blank" style="color: var(--accent-blue);">abuseipdb.com</a></small>
+                </div>
+                <div class="input-group">
+                    <label>APILayer WHOIS API Key</label>
+                    <input type="password" id="whoisApiKey" placeholder="Enter your APILayer WHOIS API key">
+                    <small style="color: var(--text-muted);">Get your key from <a href="https://apilayer.com/marketplace/whois-api" target="_blank" style="color: var(--accent-blue);">apilayer.com</a></small>
+                </div>
+                <div class="input-group">
+                    <label>URLScan.io API Key</label>
+                    <input type="password" id="urlscanApiKey" placeholder="Enter your URLScan.io API key">
+                    <small style="color: var(--text-muted);">Get your key from <a href="https://urlscan.io/dashboard/" target="_blank" style="color: var(--accent-blue);">urlscan.io</a></small>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button class="btn" onclick="clearKeys()">Clear Keys</button>
+                <button class="btn btn-primary" onclick="saveKeys()">Save Keys</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- About Modal -->
+    <div class="modal-overlay" id="aboutModal">
+        <div class="modal">
+            <div class="modal-header">
+                <h2>About</h2>
+                <button class="modal-close" onclick="closeAbout()">&times;</button>
+            </div>
+            <div class="modal-body">
+                <div style="text-align: center; margin-bottom: 24px;">
+                    <svg width="64" height="64" viewBox="0 0 24 24" fill="var(--accent-blue)" style="margin-bottom: 12px;">
+                        <path d="M12 1L3 5v6c0 5.55 3.84 10.74 9 12 5.16-1.26 9-6.45 9-12V5l-9-4zm0 10.99h7c-.53 4.12-3.28 7.79-7 8.94V12H5V6.3l7-3.11v8.8z"/>
+                    </svg>
+                    <h3 style="font-size: 20px; margin-bottom: 4px;">ThreatScan Investigator</h3>
+                    <p style="color: var(--text-secondary); font-size: 12px;">Open Source OSINT Tool</p>
+                </div>
+                
+                <div style="background: var(--bg-tertiary); border-radius: 8px; padding: 16px; margin-bottom: 16px;">
+                    <h4 style="font-size: 14px; margin-bottom: 12px; color: var(--accent-blue);">Contact Information</h4>
+                    <div style="display: flex; flex-direction: column; gap: 8px;">
+                        <div style="display: flex; align-items: center; gap: 8px;">
+                            <svg width="16" height="16" viewBox="0 0 24 24" fill="var(--text-secondary)">
+                                <path d="M20 4H4c-1.1 0-1.99.9-1.99 2L2 18c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V6c0-1.1-.9-2-2-2zm0 4l-8 5-8-5V6l8 5 8-5v2z"/>
+                            </svg>
+                            <span>Email: <a href="mailto:kimrench23@gmail.com" style="color: var(--accent-blue);">kimrench23@gmail.com</a></span>
+                        </div>
+                        <div style="display: flex; align-items: center; gap: 8px;">
+                            <svg width="16" height="16" viewBox="0 0 24 24" fill="var(--text-secondary)">
+                                <path d="M19 3a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h14m-.5 15.5v-5.3a3.26 3.26 0 0 0-3.26-3.26c-.85 0-1.84.52-2.32 1.3v-1.11h-2.79v8.37h2.79v-4.93c0-.77.62-1.4 1.39-1.4a1.4 1.4 0 0 1 1.4 1.4v4.93h2.79M6.88 8.56a1.68 1.68 0 0 0 1.68-1.68c0-.93-.75-1.69-1.68-1.69a1.69 1.69 0 0 0-1.69 1.69c0 .93.76 1.68 1.69 1.68m1.39 9.94v-8.37H5.5v8.37h2.77z"/>
+                            </svg>
+                            <span>LinkedIn: <a href="https://linkedin.com/in/ksantos-tech" target="_blank" style="color: var(--accent-blue);">linkedin.com/in/ksantos-tech</a></span>
+                        </div>
+                    </div>
+                </div>
+
+                <div style="background: var(--bg-tertiary); border-radius: 8px; padding: 16px; margin-bottom: 16px;">
+                    <h4 style="font-size: 14px; margin-bottom: 12px; color: var(--accent-yellow);">Disclaimer</h4>
+                    <p style="color: var(--text-secondary); font-size: 12px; line-height: 1.6;">
+                        The Threat Analyzer integrates publicly available threat intelligence from AbuseIPDB, VirusTotal, and APILayer WHOIS to assist with security investigations. All information is sourced from third-party intelligence providers and is presented for research and defensive security purposes only. The maintainers of this tool do not guarantee the accuracy, completeness, or reliability of the data. This service is an independent project and is not affiliated with, sponsored by, or endorsed by AbuseIPDB, VirusTotal, APILayer, or their respective organizations. Users should validate results through additional sources before making operational or security decisions.
+                    </p>
+                </div>
+
+                <div style="text-align: center; color: var(--text-muted); font-size: 12px;">
+                    &copy; 2026 Threat Analyzer | Threat intelligence powered by AbuseIPDB, VirusTotal, APILayer WHOIS, and URLScan.io
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Investigation Summary Modal -->
+    <div class="modal-overlay" id="summaryModal">
+        <div class="modal" style="max-width: 700px; max-height: 90vh;">
+            <div class="modal-header">
+                <h2> Investigation Summary</h2>
+                <button class="modal-close" onclick="closeSummaryModal()">&times;</button>
+            </div>
+            <div class="modal-body" style="max-height: 60vh; overflow-y: auto;">
+                <div id="summaryStats" style="display: flex; gap: 16px; margin-bottom: 16px; flex-wrap: wrap;">
+                    <!-- Stats will be populated by JS -->
+                </div>
+                <textarea id="summaryText" style="width: 100%; height: 300px; background: var(--bg-tertiary); border: 1px solid var(--border-color); color: var(--text-primary); padding: 12px; font-family: monospace; font-size: 12px; border-radius: 8px; resize: vertical;" placeholder="Click 'Generate Summary' to create a SOC investigation report from your workspace data."></textarea>
+            </div>
+            <div class="modal-footer" style="display: flex; gap: 8px; flex-wrap: wrap;">
+                <button class="btn btn-primary" onclick="generateInvestigationSummary()" style="background: var(--accent-purple);">
+                     Generate Summary
+                </button>
+                <button class="btn" onclick="copySummary()">
+                     Copy
+                </button>
+                <button class="btn" onclick="downloadSummary('txt')">
+                     TXT
+                </button>
+                <button class="btn" onclick="downloadSummary('md')">
+                     Markdown
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Footer -->
+    <footer style="background: var(--bg-secondary); border-top: 1px solid var(--border); padding: 16px; text-align: center; margin-top: auto;">
+        <div style="color: var(--text-muted); font-size: 12px;">
+            <strong style="color: var(--text-secondary);">ThreatScan Investigator</strong> | Threat Intelligence & IOC Analysis
+        </div>
+        <div style="color: var(--text-muted); font-size: 11px; margin-top: 8px;">
+            Built for SOC Analysts & Threat Hunters | <a href="#" onclick="openFAQs(); return false;" style="color: var(--accent-blue); text-decoration: underline;">FAQs & Limitations</a>
+        </div>
+    </footer>
+
+    <script src="js/threat-engine.js"></script>
+    <script src="js/ui-panels.js"></script>
+    <script src="js/scripts.js"></script>
+</body>
+</html>
+
+
