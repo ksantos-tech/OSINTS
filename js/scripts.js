@@ -2028,13 +2028,23 @@ Date:
             }
 
             // Process each IOC via Worker API
+            const keys = getKeys();
             for (let i = 0; i < validIocs.length; i++) {
                 const ioc = validIocs[i];
                 
                 try {
-                    // Call Worker API for each IOC
+                    // Call Worker API for each IOC (include API keys like single scan)
                     const url = WORKER_API_URL + '/scan?value=' + encodeURIComponent(ioc);
-                    const response = await fetch(url);
+                    const response = await fetch(url, {
+                        method: 'GET',
+                        headers: {
+                            'Accept': 'application/json',
+                            'X-VT-API-Key': keys.vt || '',
+                            'X-AbuseIPDB-Key': keys.abuseipdb || '',
+                            'X-Whois-Key': keys.whois || '',
+                            'X-URLScan-Key': keys.urlscan || ''
+                        }
+                    });
                     const data = await response.json();
                     
                     bulkResults.push({
