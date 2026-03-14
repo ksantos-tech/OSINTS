@@ -120,16 +120,18 @@
             // Setup investigation notes autosave
             document.getElementById('investigationNotes').addEventListener('input', handleNotesInput);
             
-            // Check if first time user - show welcome prompt
+            // Check if first time user - show welcome prompt (but demo popup will trigger it)
             const hasVisited = localStorage.getItem('threatscan_visited');
             const keys = getKeys();
             if (!hasVisited || (!keys.vt && !keys.abuse && !keys.whois)) {
-                // Show welcome banner
-                setTimeout(() => {
-                    showWelcomeBanner();
-                }, 500);
+                // Show demo popup first, which will then show welcome banner
                 localStorage.setItem('threatscan_visited', 'true');
+                showDemoPopup();
+                return;
             }
+            
+            // For returning users with keys, still show demo popup
+            showDemoPopup();
             
             // Auto-detect IOC type
             document.getElementById('iocInput').addEventListener('input', (e) => {
@@ -161,8 +163,8 @@
             banner.style.cssText = `
                 position: fixed;
                 top: 50%;
-                left: 50%;
-                transform: translate(-50%, -50%);
+                left: 40%;
+                transform: translate(-40%, -50%);
                 background: var(--bg-secondary);
                 border: 2px solid var(--accent-blue);
                 border-radius: 16px;
@@ -181,48 +183,54 @@
                         to { opacity: 1; transform: translate(-50%, -50%) scale(1); }
                     }
                 </style>
-                <div style="margin-bottom: 24px;">
-                    <img src="mainlogo.png" style="width: 280px; height: 240px; margin-bottom: 12px; filter: drop-shadow(0 0 8px rgba(0,150,255,0.6));">
-                    <h2 style="color: #66b3ff; margin: 0; font-size: 32px; font-weight: 700; letter-spacing: 0.5px; text-shadow: 0 0 10px rgba(0,150,255,0.4);">Welcome to ThreatAnalyzer</h2>
-                </div>
-                <p style="color: var(--text-secondary); margin-bottom: 24px; line-height: 1.6; font-size: 15px;">
-                    Connect your threat intelligence providers by adding your API keys.
-                </p>
-                <div style="margin-bottom: 28px; text-align: left; background: rgba(88, 166, 255, 0.08); border-radius: 10px; padding: 16px 20px;">
-                    <p style="color: var(--accent-blue); margin: 0 0 12px 0; font-size: 13px; font-weight: 600; text-transform: uppercase; letter-spacing: 1px;">What You Can Do</p>
-                    <ul style="margin: 0; padding-left: 20px; color: var(--text-secondary); line-height: 1.8; font-size: 14px; list-style: none;">
-                        <li> IOC Reputation Analysis</li>
-                        <li> Threat Intelligence Correlation</li>
-                        <li> SIEM Query Generator</li>
-                        <li> Bulk IOC Investigation</li>
-                        <li> Export Investigation Results</li>
-                    </ul>
-                </div>
-                <div style="margin-bottom: 20px; text-align: left; background: rgba(34, 197, 94, 0.08); border-radius: 8px; padding: 10px 14px; border-left: 3px solid #22C55E;">
-                    <p style="color: #22C55E; margin: 0 0 6px 0; font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: 1px;">Privacy Notice</p>
-                    <ul style="margin: 0; padding-left: 14px; color: var(--text-secondary); line-height: 1.5; font-size: 11px; list-style: none;">
-                        <li> All analysis happens locally in your browser</li>
-                        <li> No IOC data is stored or transmitted by ThreatAnalyzer</li>
-                    </ul>
-                </div>
-                <div style="margin-bottom: 20px; text-align: left; background: rgba(59, 130, 246, 0.08); border-radius: 8px; padding: 10px 14px; border-left: 3px solid #3B82F6;">
-                    <p style="color: #3B82F6; margin: 0 0 6px 0; font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: 1px;">Recent Features</p>
-                    <ul style="margin: 0; padding-left: 14px; color: var(--text-secondary); line-height: 1.5; font-size: 11px; list-style: none;">
-                        <li> Bulk IOC scanning</li>
-                        <li> Risk scoring engine</li>
-                        <li> SIEM query generator</li>
-                        <li> Combined results dashboard</li>
-                    </ul>
-                </div>
-                <div style="display: flex; gap: 12px; justify-content: center; flex-wrap: wrap;">
-                    <button onclick="openSettings(); closeWelcomeBanner();" 
-                        style="background: var(--accent-blue); color: white; border: none; padding: 14px 28px; border-radius: 8px; cursor: pointer; font-size: 15px; font-weight: 600; display: flex; align-items: center; gap: 8px;">
-                         Configure API Keys
-                    </button>
-                    <button onclick="openFAQs(); closeWelcomeBanner();" 
-                        style="background: var(--bg-tertiary); color: var(--text-primary); border: 1px solid rgba(255,255,255,0.1); padding: 14px 28px; border-radius: 8px; cursor: pointer; font-size: 15px; opacity: 0.8;">
-                         View Documentation
-                    </button>
+                <div class="welcome-layout">
+                    <div class="welcome-left">
+                        <div style="margin-bottom: 24px;">
+                            <img src="mainlogo.png" style="width: 280px; height: 240px; margin-bottom: 12px; filter: drop-shadow(0 0 8px rgba(0,150,255,0.6));">
+                            <h2 style="color: #66b3ff; margin: 0; font-size: 32px; font-weight: 700; letter-spacing: 0.5px; text-shadow: 0 0 10px rgba(0,150,255,0.4);">Welcome to ThreatAnalyzer</h2>
+                        </div>
+                        <p style="color: var(--text-secondary); margin-bottom: 24px; line-height: 1.6; font-size: 15px;">
+                            Connect your threat intelligence providers by adding your API keys.
+                        </p>
+                        <div style="margin-bottom: 28px; text-align: left; background: rgba(88, 166, 255, 0.08); border-radius: 10px; padding: 16px 20px;">
+                            <p style="color: var(--accent-blue); margin: 0 0 12px 0; font-size: 13px; font-weight: 600; text-transform: uppercase; letter-spacing: 1px;">What You Can Do</p>
+                            <ul style="margin: 0; padding-left: 20px; color: var(--text-secondary); line-height: 1.8; font-size: 14px; list-style: none;">
+                                <li> IOC Reputation Analysis</li>
+                                <li> Threat Intelligence Correlation</li>
+                                <li> SIEM Query Generator</li>
+                                <li> Bulk IOC Investigation</li>
+                                <li> Export Investigation Results</li>
+                            </ul>
+                        </div>
+                        <div style="margin-bottom: 20px; text-align: left; background: rgba(34, 197, 94, 0.08); border-radius: 8px; padding: 10px 14px; border-left: 3px solid #22C55E;">
+                            <p style="color: #22C55E; margin: 0 0 6px 0; font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: 1px;">Privacy Notice</p>
+                            <ul style="margin: 0; padding-left: 14px; color: var(--text-secondary); line-height: 1.5; font-size: 11px; list-style: none;">
+                                <li> All analysis happens locally in your browser</li>
+                                <li> No IOC data is stored or transmitted by ThreatAnalyzer</li>
+                            </ul>
+                        </div>
+                        <div style="margin-bottom: 20px; text-align: left; background: rgba(59, 130, 246, 0.08); border-radius: 8px; padding: 10px 14px; border-left: 3px solid #3B82F6;">
+                            <p style="color: #3B82F6; margin: 0 0 6px 0; font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: 1px;">Recent Features</p>
+                            <ul style="margin: 0; padding-left: 14px; color: var(--text-secondary); line-height: 1.5; font-size: 11px; list-style: none;">
+                                <li> Bulk IOC scanning</li>
+                                <li> Risk scoring engine</li>
+                                <li> SIEM query generator</li>
+                                <li> Combined results dashboard</li>
+                            </ul>
+                        </div>
+                        <div style="display: flex; gap: 12px; justify-content: center; flex-wrap: wrap;">
+                            <button onclick="openSettings(); closeWelcomeBanner();" 
+                                style="background: var(--accent-blue); color: white; border: none; padding: 14px 28px; border-radius: 8px; cursor: pointer; font-size: 15px; font-weight: 600; display: flex; align-items: center; gap: 8px;">
+                                 Configure API Keys
+                            </button>
+                            <button onclick="openFAQs(); closeWelcomeBanner();" 
+                                style="background: var(--bg-tertiary); color: var(--text-primary); border: 1px solid rgba(255,255,255,0.1); padding: 14px 28px; border-radius: 8px; cursor: pointer; font-size: 15px; opacity: 0.8;">
+                                 View Documentation
+                            </button>
+                        </div>
+                    </div>
+                    <div class="welcome-right">
+                    </div>
                 </div>
                 <p style="color: var(--text-muted); font-size: 12px; margin-top: 24px;">
                     Press ESC to close
@@ -248,6 +256,56 @@
             
             document.body.appendChild(overlay);
             document.body.appendChild(banner);
+        }
+        
+        // Demo Popup Function - shows independently of welcome banner
+        function showDemoPopup() {
+            // Skip if already shown this session
+            if (sessionStorage.getItem('demoPopupShown')) return;
+            
+            setTimeout(() => {
+                if (sessionStorage.getItem('demoPopupShown')) return;
+                
+                const demoOverlay = document.createElement('div');
+                demoOverlay.id = 'demoPopupOverlay';
+                demoOverlay.style.cssText = 'position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.85);z-index:9999;display:flex;align-items:center;justify-content:center;';
+                
+                const demoPopup = document.createElement('div');
+                demoPopup.style.cssText = 'background:linear-gradient(135deg,#0f1a2b,#16253d);border:1px solid rgba(0,150,255,0.4);border-radius:16px;padding:32px;max-width:840px;text-align:center;animation:fadeIn 0.3s ease;';
+                
+                demoPopup.innerHTML = `
+                    <div style="position:relative;margin-bottom:20px;cursor:pointer;" onclick="window.open('https://youtu.be/-Yu7HrRjHo8','_blank'); closeDemoPopup();">
+                        <img src="YTpreview.png" style="width:100%;border-radius:12px;border:1px solid rgba(0,150,255,0.4);">
+                        <div style="position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);font-size:80px;color:white;text-shadow:0 0 20px rgba(0,0,0,0.8);">▶</div>
+                    </div>
+                    <h2 style="color:#66b3ff;margin:0 0 16px 0;font-size:28px;">🎬 Watch ThreatAnalyzer Demo</h2>
+                    <p style="color:var(--text-secondary);margin:0 0 24px 0;line-height:1.6;font-size:16px;">See how ThreatAnalyzer can help you investigate threats efficiently.</p>
+                    <div style="display:flex;gap:16px;justify-content:center;flex-wrap:wrap;">
+                        <button onclick="window.open('https://youtu.be/-Yu7HrRjHo8','_blank'); closeDemoPopup();" 
+                            style="background:var(--accent-blue);color:white;border:none;padding:16px 32px;border-radius:10px;cursor:pointer;font-size:16px;font-weight:600;">
+                            Watch Demo
+                        </button>
+                        <button onclick="closeDemoPopup();" 
+                            style="background:var(--bg-tertiary);color:var(--text-primary);border:1px solid rgba(255,255,255,0.1);padding:16px 32px;border-radius:10px;cursor:pointer;font-size:16px;">
+                            Skip
+                        </button>
+                    </div>
+                `;
+                
+                demoOverlay.appendChild(demoPopup);
+                document.body.appendChild(demoOverlay);
+                
+                demoOverlay.onclick = function(e) {
+                    if (e.target === demoOverlay) closeDemoPopup();
+                };
+                
+                window.closeDemoPopup = function() {
+                    if (demoOverlay.parentNode) demoOverlay.remove();
+                    sessionStorage.setItem('demoPopupShown', 'true');
+                    // Show welcome banner after demo popup is closed
+                    showWelcomeBanner();
+                };
+            }, 500);
         }
         
         // Keyboard Shortcuts
@@ -5366,69 +5424,92 @@ Date:
         function openFAQs() {
             const faqContent = `
                 <div style="max-height: 70vh; overflow-y: auto; color: var(--text-primary);">
-                    <h2 style="margin-bottom: 20px; color: var(--accent-blue);"> Frequently Asked Questions & Limitations</h2>
+                    <h2 style="margin-bottom: 20px; color: var(--accent-blue);"> Frequently Asked Questions</h2>
                     
                     <div style="margin-bottom: 20px;">
-                        <h3 style="color: var(--accent-yellow); margin-top: 16px;"> API Rate Limits</h3>
-                        <ul style="margin-left: 20px; color: var(--text-secondary); line-height: 1.8;">
-                            <li><strong>VirusTotal:</strong> Free tier: 4 requests/minute, 1,000,000 requests/month</li>
-                            <li><strong>AbuseIPDB:</strong> Free tier: 2,000 requests/day</li>
-                            <li><strong>WHOIS (APILayer):</strong> Subscription-based limits</li>
-                            <li><strong>Impact:</strong> Bulk scanning may be slower due to rate limiting</li>
-                        </ul>
-                    </div>
-                    
-                    <div style="margin-bottom: 20px;">
-                        <h3 style="color: var(--accent-red); margin-top: 16px;"> Network & CORS Issues</h3>
-                        <ul style="margin-left: 20px; color: var(--text-secondary); line-height: 1.8;">
-                            <li><strong>CORS Proxy:</strong> This tool uses corsproxy.io to bypass browser CORS restrictions</li>
-                            <li><strong>Possible Blockage:</strong> Corporate firewalls, VPNs, or ad blockers may block the proxy</li>
-                            <li><strong>Error 400:</strong> Invalid domain format or proxy rate limiting</li>
-                            <li><strong>Error 403:</strong> Access denied - proxy may be temporarily blocked</li>
-                            <li><strong>Error 429:</strong> Too many requests - rate limit exceeded</li>
-                            <li><strong>Solutions:</strong> Try again later, disable ad blocker, or use a different network</li>
-                            <li><strong>Production Use:</strong> For continuous use, host this tool on your own server</li>
-                        </ul>
-                    </div>
-                    
-                    <div style="margin-bottom: 20px;">
-                        <h3 style="color: var(--accent-blue); margin-top: 16px;"> How to Use</h3>
-                        <ul style="margin-left: 20px; color: var(--text-secondary); line-height: 1.8;">
-                            <li><strong>Single IOC Mode:</strong> Enter one IOC for detailed analysis with all sources</li>
-                            <li><strong>Bulk IOCs:</strong> Enter multiple IOCs (one per line, max 100) for batch scanning</li>
-                            <li><strong>Auto-detect:</strong> Leave type as "Auto-detect" to automatically identify IOC type</li>
-                            <li><strong>WHOIS:</strong> Works only with domains, not IP addresses</li>
-                        </ul>
-                    </div>
-                    
-                    <div style="margin-bottom: 20px;">
-                        <h3 style="color: var(--accent-green); margin-top: 16px;"> Use Cases</h3>
-                        <ul style="margin-left: 20px; color: var(--text-secondary); line-height: 1.8;">
-                            <li><strong>Threat Intelligence:</strong> Investigate IPs/domains found in logs or emails</li>
-                            <li><strong>Incident Response:</strong> Quick lookup during security incidents</li>
-                            <li><strong>Threat Hunting:</strong> Enrich IOCs with multiple intelligence sources</li>
-                            <li><strong>Research:</strong> Analyze threat patterns and actor infrastructure</li>
-                            <li><strong>Due Diligence:</strong> Check reputation of new domains/URLs</li>
-                        </ul>
-                    </div>
-                    
-                    <div style="margin-bottom: 20px;">
-                        <h3 style="color: var(--accent-blue); margin-top: 16px;"> Supported IOC Types</h3>
-                        <ul style="margin-left: 20px; color: var(--text-secondary); line-height: 1.8;">
-                            <li><strong>IP Addresses:</strong> IPv4 (e.g., 8.8.8.8) and IPv6</li>
-                            <li><strong>Domains:</strong> Full domain names (e.g., google.com, example.org)</li>
-                            <li><strong>URLs:</strong> Full URLs with http/https (e.g., https://example.com/malware)</li>
-                            <li><strong>File Hashes:</strong> MD5, SHA1, SHA256</li>
-                        </ul>
-                    </div>
-                    
-                    <div style="margin-bottom: 20px;">
-                        <h3 style="color: var(--text-muted); margin-top: 16px;"> Accuracy Disclaimer</h3>
+                        <h3 style="color: var(--accent-blue); margin-top: 16px;"> What does ThreatAnalyzer do?</h3>
                         <p style="color: var(--text-secondary); line-height: 1.8;">
-                            Threat intelligence data is dynamically updated and may contain false positives or negatives. 
-                            Always verify findings with additional context before making security decisions. 
-                            This tool is intended to assist analysts, not replace human judgment.
+                            ThreatAnalyzer enriches Indicators of Compromise (IOCs) with multi-source threat intelligence, 
+                            correlates results, and summarizes risk signals so analysts can act quickly.
                         </p>
+                    </div>
+
+                    <div style="margin-bottom: 20px;">
+                        <h3 style="color: var(--accent-blue); margin-top: 16px;"> What IOC types are supported?</h3>
+                        <ul style="margin-left: 20px; color: var(--text-secondary); line-height: 1.8;">
+                            <li><strong>URL</strong></li>
+                            <li><strong>Domain</strong></li>
+                            <li><strong>IP Address</strong></li>
+                            <li><strong>File Hash</strong> (MD5, SHA1, SHA256)</li>
+                        </ul>
+                    </div>
+
+                    <div style="margin-bottom: 20px;">
+                        <h3 style="color: var(--accent-blue); margin-top: 16px;"> Does it automatically detect IOC types?</h3>
+                        <p style="color: var(--text-secondary); line-height: 1.8;">
+                            Yes. Leave the IOC type set to Auto-detect and ThreatAnalyzer will infer the type as you paste or type.
+                        </p>
+                    </div>
+
+                    <div style="margin-bottom: 20px;">
+                        <h3 style="color: var(--accent-blue); margin-top: 16px;"> Can I investigate a single IOC?</h3>
+                        <p style="color: var(--text-secondary); line-height: 1.8;">
+                            Single IOC mode runs a full investigation across all enabled providers and consolidates the results.
+                        </p>
+                    </div>
+
+                    <div style="margin-bottom: 20px;">
+                        <h3 style="color: var(--accent-blue); margin-top: 16px;"> Can I scan multiple IOCs in bulk?</h3>
+                        <p style="color: var(--text-secondary); line-height: 1.8;">
+                            Yes. Paste multiple IOCs (one per line) to run a bulk scan and review risk signals at scale.
+                        </p>
+                    </div>
+
+                    <div style="margin-bottom: 20px;">
+                        <h3 style="color: var(--accent-blue); margin-top: 16px;"> How are results combined?</h3>
+                        <p style="color: var(--text-secondary); line-height: 1.8;">
+                            ThreatAnalyzer merges provider verdicts into a Combined Results & Analysis view that highlights severity, 
+                            confidence, and key context in one place.
+                        </p>
+                    </div>
+
+                    <div style="margin-bottom: 20px;">
+                        <h3 style="color: var(--accent-blue); margin-top: 16px;"> What is Quick Query for SIEM / EDR?</h3>
+                        <p style="color: var(--text-secondary); line-height: 1.8;">
+                            Quick Query generates ready-to-use search statements for popular SIEM/EDR workflows, saving time during investigations.
+                        </p>
+                    </div>
+
+                    <div style="margin-bottom: 20px;">
+                        <h3 style="color: var(--accent-blue); margin-top: 16px;"> What is the Investigation Notes workspace?</h3>
+                        <p style="color: var(--text-secondary); line-height: 1.8;">
+                            Use Investigation Notes to capture findings, hypotheses, and context alongside your IOC analysis.
+                        </p>
+                    </div>
+
+                    <div style="margin-bottom: 20px;">
+                        <h3 style="color: var(--accent-blue); margin-top: 16px;"> Which threat intelligence providers are supported?</h3>
+                        <ul style="margin-left: 20px; color: var(--text-secondary); line-height: 1.8;">
+                            <li><strong>VirusTotal</strong></li>
+                            <li><strong>AbuseIPDB</strong></li>
+                            <li><strong>WHOIS</strong></li>
+                            <li><strong>URLScan</strong></li>
+                        </ul>
+                    </div>
+
+                    <div style="margin-bottom: 20px;">
+                        <h3 style="color: var(--accent-blue); margin-top: 16px;"> How do I use ThreatAnalyzer?</h3>
+                        <p style="color: var(--text-secondary); line-height: 1.8; margin-bottom: 12px;">
+                            Watch the quick demo below for a walkthrough of the platform in action.
+                        </p>
+                        <div class="demo-video-card" onclick="window.open('https://youtu.be/-Yu7HrRjHo8','_blank','noopener')">
+                            <div class="demo-video-overlay">
+                                ▶ Watch Demo Video
+                            </div>
+                            <p class="demo-video-desc">
+                                See how ThreatAnalyzer works: IOC investigation, bulk scanning, and threat intelligence correlation.
+                            </p>
+                        </div>
                     </div>
                 </div>
             `;

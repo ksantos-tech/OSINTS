@@ -1048,6 +1048,102 @@ body {
    MODALS & OVERLAYS
    ============================================ */
 
+.welcome-layout {
+    display: flex;
+    align-items: center;
+    gap: 40px;
+    justify-content: center;
+}
+
+.welcome-left {
+    width: 420px;
+}
+
+.welcome-right {
+    width: 420px;
+}
+
+.demo-preview {
+    position: relative;
+    width: 100%;
+    margin-top: 20px;
+    cursor: pointer;
+}
+
+.demo-preview:hover {
+    transform: scale(1.02);
+}
+
+.demo-thumbnail {
+    width: 100%;
+    border-radius: 10px;
+    border: 1px solid rgba(0, 150, 255, 0.4);
+}
+
+.demo-play {
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    font-size: 60px;
+    color: white;
+    text-shadow: 0 0 20px rgba(0, 0, 0, 0.8);
+}
+
+.demo-caption {
+    text-align: center;
+    margin-top: 10px;
+    color: #66b3ff;
+    font-weight: 600;
+}
+
+.demo-video-card {
+    background: linear-gradient(135deg, #0f1a2b, #16253d);
+    border: 1px solid rgba(0, 150, 255, 0.4);
+    border-radius: 10px;
+    padding: 18px 20px;
+    text-align: center;
+    cursor: pointer;
+    transition: all 0.25s ease;
+    margin-top: 16px;
+}
+
+.demo-video-card:hover {
+    box-shadow: 0 0 15px rgba(0, 150, 255, 0.6);
+    transform: translateY(-2px);
+}
+
+.demo-video-overlay {
+    font-size: 16px;
+    font-weight: 600;
+    color: #66b3ff;
+    letter-spacing: 0.3px;
+}
+
+.demo-video-desc {
+    margin-top: 8px;
+    color: #9fb3c8;
+    font-size: 12px;
+    line-height: 1.5;
+}
+
+@media (max-width: 980px) {
+    .welcome-layout {
+        flex-direction: column;
+        align-items: stretch;
+    }
+
+    .welcome-left,
+    .welcome-right {
+        width: 100%;
+    }
+
+    .demo-preview {
+        width: 100%;
+        max-width: 320px;
+    }
+}
+
 .modal-overlay {
     position: fixed;
     top: 0;
