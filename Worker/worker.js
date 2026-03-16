@@ -175,157 +175,104 @@ export default {
       // Execute fast API calls in parallel (no polling)
       await Promise.all(fastPromises);
 
-      // URLSCAN - separate with polling (only this one waits)
+      // URLSCAN - submit scan then poll until result is ready
       if ((type === "url" || type === "domain") && urlscanKey) {
         try {
-            // First, submit the scan
-            const urlscan = await fetch(
-              "https://urlscan.io/api/v1/scan/",
-              {
-                method: "POST",
-                headers: {
-                  "Content-Type": "application/json",
-                  "API-Key": urlscanKey
-                },
-                body: JSON.stringify({
-                  url: value.startsWith('http') ? value : 'https://' + value,
-                  visibility: "public"
-                })
-              }
-            );
-            const scanResult = await urlscan.json();
-            
-            // If scan was submitted, poll until result is ready
-            if (scanResult && scanResult.uuid) {
-              const uuid = scanResult.uuid;
-              console.log("URLScan submitted, UUID:", uuid);
+          const scanUrl = value.startsWith("http") ? value : "https://" + value;
 
-              const pollInterval = 5000; // 5 seconds
-              const maxAttempts = 30; // ~150 seconds max wait
-              let finalResult = null;
+          // Step 1: Submit the scan
+          const submitResp = await fetch("https://urlscan.io/api/v1/scan/", {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              "API-Key": urlscanKey
+            },
+            body: JSON.stringify({ url: scanUrl, visibility: "public" })
+          });
 
-              for (let attempt = 1; attempt <= maxAttempts; attempt++) {
-                try {
-                  const resultResponse = await fetch(
-                    `https://urlscan.io/api/v1/result/${uuid}/`,
-                    {
-                      headers: {
-                        "API-Key": urlscanKey,
-                        "Accept": "application/json"
-                      }
-                    }
-                  );
-
-                  if (resultResponse.status === 200) {
-                    finalResult = await resultResponse.json();
-                    console.log("URLScan analysis complete");
-                    break;
-                  }
-
-                  if (resultResponse.status === 404) {
-                    console.log(`URLScan still processing (attempt ${attempt}/${maxAttempts})`);
-                  } else if (resultResponse.status === 429) {
-                    console.warn("URLScan rate limited, backing off...");
-                    await new Promise(r => setTimeout(r, pollInterval * 2));
-                    continue;
-                  } else {
-                    console.warn("Unexpected URLScan status:", resultResponse.status);
-                  }
-                } catch (err) {
-                  console.warn("URLScan polling error:", err?.message || err);
-                }
-
-                await new Promise(resolve => setTimeout(resolve, pollInterval));
-              }
-
-              if (finalResult) {
-                results.urlscan = finalResult;
-              } else {
-                results.urlscan = { error: "URLScan result not ready after polling timeout" };
-              }
-                  if (searchResponse.ok && searchData?.results?.length) {
-                    const indexed = searchData.results[0];
-                    const indexedUuid = indexed?.task?.uuid || scanResult.uuid;
-
-                    const indexedResultResponse = await fetch(
-                      `https://urlscan.io/api/v1/result/${indexedUuid}/`,
-                      {
-                        headers: {
-                          "API-Key": urlscanKey,
-                          "Accept": "application/json"
-                        }
-                      }
-                    );
-
-                    if (indexedResultResponse.ok) {
-                      const indexedResultData = await indexedResultResponse.json();
-                      if (indexedResultData?.task || indexedResultData?.page || indexedResultData?.stats || indexedResultData?.verdicts) {
-                        finalResult = indexedResultData;
-                        console.log("URLScan complete via search->result endpoint");
-                        break;
-                      }
-                    }
-                  }
-                } catch (e) {
-                  // Continue polling fallback path below
-                }
-              }
-
-              if (!finalResult && resultUrl) {
-                // One last immediate fetch attempt before returning pending
-                try {
-                  const finalTry = await fetch(buildApiResultUrl(resultUrl), {
-                    headers: { "API-Key": urlscanKey, "Accept": "application/json" }
-                  });
-                  if (finalTry.ok) {
-                    const finalTryData = await finalTry.json();
-                    if (finalTryData?.task || finalTryData?.page || finalTryData?.stats || finalTryData?.verdicts) {
-                      finalResult = finalTryData;
-                    }
-                  }
-                } catch (e) {
-                  // Fall through to pending summary
-                }
-              }
-
-              // Extract essential fields from completed result (if available)
-              let domain = value;
-              try {
-                domain = type === "url" ? new URL(value).hostname : value;
-              } catch (e) {}
-
-              const verdict = finalResult?.verdicts?.overall?.malicious
-                ? "malicious"
-                : finalResult?.verdicts?.overall?.safe
-                  ? "safe"
-                  : finalResult?.verdicts?.phishing
-                    ? "phishing"
-                    : "unknown";
-
-              const status = finalResult ? "complete" : (scanResult.status || "pending");
-              const scanTime = finalResult?.task?.time
-                ? new Date(finalResult.task.time).toISOString()
-                : null;
-
-              summaryResult = {
-                verdict,
-                status,
-                url: finalResult?.page?.url || scanResult.url || (value.startsWith("http") ? value : `https://${value}`),
-                domain: finalResult?.page?.domain || domain,
-                scannedAt: scanTime,
-                uuid: scanResult.uuid,
-                resultUrl: resultUrl,
-                message: finalResult ? "Scan completed" : "Scan submitted. Result pending...",
-                _fullResult: finalResult
-              };
-
-              results.urlscan = summaryResult;
-            } else {
-              results.urlscan = scanResult;
-            }
-          } catch (err) {
-            results.urlscan = { error: err.message };
+          if (!submitResp.ok) {
+            const errBody = await submitResp.json().catch(() => ({}));
+            throw new Error(`URLScan submit failed (HTTP ${submitResp.status}): ${errBody.message || submitResp.statusText}`);
           }
+
+          const submitData = await submitResp.json();
+          const uuid = submitData?.uuid;
+
+          if (!uuid) {
+            throw new Error("URLScan returned no UUID after submission.");
+          }
+
+          console.log("URLScan submitted, UUID:", uuid);
+
+          // Step 2: Poll GET /result/{uuid} until HTTP 200
+          // Note: Cloudflare Workers have a 30s CPU limit on the free plan.
+          // We use a short initial delay + tight loop so we stay within budget.
+          // If the scan doesn't complete in time the frontend will continue
+          // polling via urlscan-poller.js using the uuid we return.
+          const POLL_INTERVAL_MS = 5000;
+          const MAX_ATTEMPTS     = 5;   // 5 × 5s = 25s max in the Worker
+          const INITIAL_DELAY_MS = 8000;
+
+          const sleep = (ms) => new Promise(r => setTimeout(r, ms));
+          await sleep(INITIAL_DELAY_MS);
+
+          let finalResult = null;
+
+          for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
+            console.log(`URLScan polling attempt ${attempt}/${MAX_ATTEMPTS} for ${uuid}`);
+
+            try {
+              const pollResp = await fetch(
+                `https://urlscan.io/api/v1/result/${uuid}/`,
+                { headers: { "API-Key": urlscanKey, "Accept": "application/json" } }
+              );
+
+              if (pollResp.status === 200) {
+                finalResult = await pollResp.json();
+                console.log("URLScan complete on attempt", attempt);
+                break;
+              }
+
+              if (pollResp.status === 404) {
+                // Still processing — wait and retry
+                if (attempt < MAX_ATTEMPTS) {
+                  await sleep(POLL_INTERVAL_MS);
+                }
+                continue;
+              }
+
+              if (pollResp.status === 429) {
+                console.warn("URLScan rate limited, backing off...");
+                await sleep(POLL_INTERVAL_MS * 2);
+                continue;
+              }
+
+              console.warn("Unexpected URLScan poll status:", pollResp.status);
+              await sleep(POLL_INTERVAL_MS);
+
+            } catch (pollErr) {
+              console.warn("URLScan polling fetch error:", pollErr?.message);
+              await sleep(POLL_INTERVAL_MS);
+            }
+          }
+
+          if (finalResult) {
+            // Return the full result — frontend renderURLScan() will parse it
+            results.urlscan = finalResult;
+          } else {
+            // Worker timed out before scan finished — return uuid so the
+            // frontend poller (urlscan-poller.js) can continue waiting
+            results.urlscan = {
+              status: "pending",
+              uuid: uuid,
+              resultUrl: `https://urlscan.io/result/${uuid}/`,
+              message: "Scan submitted. Frontend will continue polling."
+            };
+          }
+
+        } catch (err) {
+          results.urlscan = { error: err.message };
+        }
       } else if (type === "url" || type === "domain") {
         results.urlscan = { error: "URLSCAN_KEY not configured" };
       }
