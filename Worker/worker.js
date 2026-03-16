@@ -195,56 +195,19 @@ export default {
             );
             const scanResult = await urlscan.json();
             
-            // If scan was submitted, get the result
-            if (scanResult.uuid) {
-              console.log("URLScan submitted, UUID:", scanResult.uuid);
+            // If scan was submitted, poll until result is ready
+            if (scanResult && scanResult.uuid) {
+              const uuid = scanResult.uuid;
+              console.log("URLScan submitted, UUID:", uuid);
 
-              const resultUrl = scanResult.result || scanResult.resultUrl;
+              const pollInterval = 5000; // 5 seconds
+              const maxAttempts = 30; // ~150 seconds max wait
               let finalResult = null;
-              let summaryResult = null;
 
-              // Wait for scan completion using result endpoint first
-              const maxRetries = 15; // keep existing URLScan polling behavior
-              const retryDelay = 2000; // keep existing URLScan polling behavior
-
-              // Helper to normalize resultUrl into API endpoint
-              const buildApiResultUrl = (rawUrl) => {
-                if (!rawUrl) return null;
-                const separator = rawUrl.includes("?") ? "&" : "?";
-                return `${rawUrl}${separator}format=json`;
-              };
-
-              for (let i = 0; i < maxRetries; i++) {
-                await new Promise(resolve => setTimeout(resolve, retryDelay));
-                console.log("URLScan poll attempt:", i + 1);
-
-                // Primary: fetch from resultUrl endpoint when available
-                if (resultUrl) {
-                  try {
-                    const enrichResponse = await fetch(buildApiResultUrl(resultUrl), {
-                      headers: { "API-Key": urlscanKey, "Accept": "application/json" }
-                    });
-
-                    if (enrichResponse.ok) {
-                      const enrichedData = await enrichResponse.json();
-
-                      // Complete payload includes task/page/stats/verdicts
-                      if (enrichedData?.task || enrichedData?.page || enrichedData?.stats || enrichedData?.verdicts) {
-                        finalResult = enrichedData;
-                        console.log("URLScan complete via resultUrl endpoint");
-                        break;
-                      }
-                    }
-                  } catch (e) {
-                    // Keep polling fallback path below
-                  }
-                }
-
-                // Secondary fallback for domains that still return pending on result URL:
-                // call direct result API by UUID
+              for (let attempt = 1; attempt <= maxAttempts; attempt++) {
                 try {
-                  const uuidResultResponse = await fetch(
-                    `https://urlscan.io/api/v1/result/${scanResult.uuid}/`,
+                  const resultResponse = await fetch(
+                    `https://urlscan.io/api/v1/result/${uuid}/`,
                     {
                       headers: {
                         "API-Key": urlscanKey,
@@ -253,31 +216,33 @@ export default {
                     }
                   );
 
-                  if (uuidResultResponse.ok) {
-                    const uuidResultData = await uuidResultResponse.json();
-                    if (uuidResultData?.task || uuidResultData?.page || uuidResultData?.stats || uuidResultData?.verdicts) {
-                      finalResult = uuidResultData;
-                      console.log("URLScan complete via UUID result endpoint");
-                      break;
-                    }
+                  if (resultResponse.status === 200) {
+                    finalResult = await resultResponse.json();
+                    console.log("URLScan analysis complete");
+                    break;
                   }
-                } catch (e) {
-                  // Continue to search fallback
+
+                  if (resultResponse.status === 404) {
+                    console.log(`URLScan still processing (attempt ${attempt}/${maxAttempts})`);
+                  } else if (resultResponse.status === 429) {
+                    console.warn("URLScan rate limited, backing off...");
+                    await new Promise(r => setTimeout(r, pollInterval * 2));
+                    continue;
+                  } else {
+                    console.warn("Unexpected URLScan status:", resultResponse.status);
+                  }
+                } catch (err) {
+                  console.warn("URLScan polling error:", err?.message || err);
                 }
 
-                // Tertiary fallback: search API by UUID
-                try {
-                  const searchResponse = await fetch(
-                    `https://urlscan.io/api/v1/search/?q=uuid:${scanResult.uuid}&size=1`,
-                    {
-                      headers: {
-                        "API-Key": urlscanKey,
-                        "Accept": "application/json"
-                      }
-                    }
-                  );
+                await new Promise(resolve => setTimeout(resolve, pollInterval));
+              }
 
-                  const searchData = await searchResponse.json();
+              if (finalResult) {
+                results.urlscan = finalResult;
+              } else {
+                results.urlscan = { error: "URLScan result not ready after polling timeout" };
+              }
                   if (searchResponse.ok && searchData?.results?.length) {
                     const indexed = searchData.results[0];
                     const indexedUuid = indexed?.task?.uuid || scanResult.uuid;

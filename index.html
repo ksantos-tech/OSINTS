@@ -19,7 +19,7 @@
             <div class="header-brand-text">
                 <h1 style="font-size: 28px; font-weight: 700; margin: 0; color: var(--text-primary);">ThreatAnalyzer</h1>
                 <span class="header-tagline" style="font-size: 14px;">Cybersecurity Investigation &amp; Threat Intelligence Platform</span>
-                <span class="header-version">v1.2  Built by <a href="https://www.linkedin.com/in/ksantos-tech/" target="_blank">KS</a></span>
+                <span class="header-version">v1.2 Built by <a href="https://www.linkedin.com/in/ksantos-tech" target="_blank" rel="noopener noreferrer" class="author-link">Kim Santos</a></span>
             </div>
         </div>
         <div class="header-right">
@@ -128,7 +128,7 @@
                 <button class="tab-btn" data-tab="whois" onclick="switchTab('whois')"> WHOIS</button>
                 <button class="tab-btn" data-tab="urlscan" onclick="switchTab('urlscan')"> URLScan</button>
                 <button class="tab-btn" data-tab="combined" onclick="switchTab('combined')"> Combined Results & Analysis</button>
-                <button class="tab-btn bulk-tab" data-tab="bulk" onclick="switchTab('bulk')" style="display:none;"> Bulk</button>
+                <button class="tab-btn bulk-tab" data-tab="bulk" onclick="switchTab('bulk')" style="display:none;"> Bulk (<span id="bulk-tab-count">0</span>)</button>
                 <button class="tab-btn" data-tab="ipquery" onclick="switchTab('ipquery')"> Quick Query</button>
                 <button class="tab-btn" data-tab="notes" onclick="switchTab('notes')"> Notes</button>
             </div>
@@ -544,6 +544,7 @@ Use timestamps to track events. Press Ctrl+3 for quick timestamp."
         </div>
     </footer>
 
+    <script src="js/urlscan-poller.js"></script>
     <script src="js/threat-engine.js"></script>
     <script src="js/ui-panels.js"></script>
     <script src="js/scripts.js"></script>

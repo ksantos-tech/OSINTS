@@ -2005,7 +2005,7 @@ Date:
             
             // URLScan lookup - URLScan only works for URLs and domains, not IPs or hashes
             if (keys.urlscan && (type === 'url' || type === 'domain')) {
-                scanPromises.push(scanURLScan(ioc));
+                scanPromises.push(runURLScan(ioc));
             } else if (keys.urlscan && (type === 'ip' || type === 'hash')) {
                 const urlscanResults = document.getElementById('urlscanResults');
                 if (urlscanResults) {
@@ -2078,6 +2078,7 @@ Date:
             // Initialize bulk results
             bulkResults = [];
             bulkScanProgress = 0;
+            updateBulkIocCount(validIocs.length);
 
             // Show bulk results tab
             switchTab('vt');
@@ -2503,6 +2504,8 @@ Date:
                 }
                 return true;
             });
+
+            updateBulkIocCount(bulkResults.length);
             
             // Get unique values for dropdowns
             const uniqueValues = {
@@ -2603,7 +2606,7 @@ Date:
                         color: white;
                     }
                 </style>
-                <div style="margin-bottom:16px;">
+                <div class="bulk-toolbar">
                     <button class="btn btn-sm" onclick="copyAllBulkResults()">
                         Copy All Results
                     </button>
@@ -2630,6 +2633,9 @@ Date:
                 <table class="bulk-results-table" id="bulkResultsTable">
                     <thead>
                         <tr>
+                            <th class="ioc-index">
+                                <div class="th-content">#</div>
+                            </th>
                             <th>
                                 <div class="th-content">
                                     IOC
@@ -2687,7 +2693,7 @@ Date:
                     <tbody>
             `;
 
-            sortedResults.forEach(r => {
+            sortedResults.forEach((r, index) => {
                 let vtText = '-';
                 let abuseText = '-';
                 let whoisText = '-';
@@ -2781,6 +2787,7 @@ Date:
 
                 html += `
                     <tr class="${rowClass}">
+                        <td class="ioc-index">${index + 1}</td>
                         <td class="ioc-cell" title="${r.ioc}"><strong>${r.ioc}</strong>${tldBadge}<br>${pivotBtns}</td>
                         <td>${r.type}</td>
                         <td><span class="vt-detections"><span class="vt-malicious">${malCount}</span>/<span class="vt-clean">${total}</span></span></td>
@@ -2791,6 +2798,8 @@ Date:
                     </tr>
                 `;
             });
+
+            updateBulkIocCount(sortedResults.length);
 
             html += '</tbody></table>';
             container.innerHTML = html;
@@ -2822,6 +2831,13 @@ Date:
             
             // Initialize column resizing
             setTimeout(() => initColumnResize('bulkResultsTable'), 100);
+        }
+
+        function updateBulkIocCount(count = bulkResults.length) {
+            const tabCountEl = document.getElementById('bulk-tab-count');
+            if (tabCountEl) {
+                tabCountEl.textContent = String(count || 0);
+            }
         }
 
         // Copy single bulk row
