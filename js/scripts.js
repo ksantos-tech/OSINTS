@@ -3465,11 +3465,15 @@ Date:
                 
                 // Process AbuseIPDB results
                 if (data.abuseipdb) {
-                    if (data.abuseipdb.error) {
-                        showError('abuseipdb', data.abuseipdb.error);
+                    console.log('Frontend received abuseipdb data:', data.abuseipdb);
+                    // Extract inner data if wrapped (API returns { data: {...} })
+                    const abuseData = data.abuseipdb.data || data.abuseipdb;
+                    console.log('AbuseIPDB extracted data:', abuseData);
+                    if (abuseData.error) {
+                        showError('abuseipdb', abuseData.error);
                     } else {
-                        currentResults.abuseipdb = data.abuseipdb;
-                        renderAbuseIPDB(data.abuseipdb);
+                        currentResults.abuseipdb = abuseData;
+                        renderAbuseIPDB(abuseData);
                     }
                 }
                 
@@ -4816,8 +4820,21 @@ Date:
         }
 
         function renderAbuseIPDB(data) {
+            console.log('renderAbuseIPDB called with:', data);
+            
+            // Safe helper function to display values
+            const safe = (value) => {
+                return value !== undefined && value !== null && value !== "" ? value : "N/A";
+            };
+            
+            // Parse the data - handle both { data: {...} } and {...} formats
+            // The API returns { data: {...} }, so we need to extract the inner data
+            const apiData = data.data || data;
+            console.log('AbuseIPDB Parsed Data:', apiData);
+            
             const container = document.getElementById('abuseipdbResults');
-            if (!container || !data) {
+            console.log('Container element:', container);
+            if (!container || !apiData) {
                 if (container) {
                     container.innerHTML = '<div class="error-message">AbuseIPDB data not available.</div>';
                 }
@@ -4827,22 +4844,22 @@ Date:
             }
             
             // Parse abuse confidence score
-            const confidence = data.abuseConfidenceScore || 0;
+            const confidence = safe(apiData.abuseConfidenceScore);
             let confidenceColor = 'var(--accent-green)';
             if (confidence > 50) confidenceColor = 'var(--accent-yellow)';
             if (confidence > 75) confidenceColor = 'var(--accent-red)';
 
             // Parse date formats
-            const lastReportedAt = data.lastReportedAt ? new Date(data.lastReportedAt).toLocaleString() : 'N/A';
+            const lastReportedAt = apiData.lastReportedAt ? new Date(apiData.lastReportedAt).toLocaleString() : 'N/A';
 
             // Hostnames
-            const hostnames = data.hostnames || [];
+            const hostnames = apiData.hostnames || [];
             
             // Categories
-            const categories = data.categories || [];
+            const categories = apiData.categories || [];
             
             // Reports
-            const reports = data.reports || [];
+            const reports = apiData.reports || [];
 
             container.innerHTML = `
                 <div class="result-card">
@@ -4860,19 +4877,19 @@ Date:
                                 </tr>
                             </thead>
                             <tbody>
-                                <tr><td>ipAddress</td><td><strong>${data.ipAddress || 'N/A'}</strong></td><td>The IP address checked</td></tr>
-                                <tr><td>isPublic</td><td>${data.isPublic !== undefined ? (data.isPublic ? 'True' : 'False') : 'N/A'}</td><td>Whether the IP is publicly routable</td></tr>
-                                <tr><td>ipVersion</td><td>${data.ipVersion || 'N/A'}</td><td>IP version (IPv4 or IPv6)</td></tr>
-                                <tr><td>isWhitelisted</td><td>${data.isWhitelisted ? 'True' : 'False'}</td><td>Indicates if the IP is marked as whitelisted</td></tr>
-                                <tr><td>abuseConfidenceScore</td><td><span style="color: ${confidenceColor}; font-weight: bold;">${confidence}%</span></td><td>Score indicating the likelihood of abuse (0100)</td></tr>
-                                <tr><td>countryCode</td><td>${data.countryCode || 'N/A'}</td><td>2-letter ISO country code</td></tr>
-                                <tr><td>usageType</td><td>${data.usageType || 'N/A'}</td><td>Type of usage (e.g., Reserved, Fixed Line ISP, Government)</td></tr>
-                                <tr><td>isp</td><td>${data.isp || 'N/A'}</td><td>Internet Service Provider name</td></tr>
-                                <tr><td>domain</td><td>${data.domain || 'N/A'}</td><td>Associated domain, if any</td></tr>
+                                <tr><td>ipAddress</td><td><strong>${safe(apiData.ipAddress)}</strong></td><td>The IP address checked</td></tr>
+                                <tr><td>isPublic</td><td>${apiData.isPublic !== undefined ? (apiData.isPublic ? 'True' : 'False') : 'N/A'}</td><td>Whether the IP is publicly routable</td></tr>
+                                <tr><td>ipVersion</td><td>${safe(apiData.ipVersion)}</td><td>IP version (IPv4 or IPv6)</td></tr>
+                                <tr><td>isWhitelisted</td><td>${apiData.isWhitelisted !== undefined ? (apiData.isWhitelisted ? 'True' : 'False') : 'N/A'}</td><td>Indicates if the IP is marked as whitelisted</td></tr>
+                                <tr><td>abuseConfidenceScore</td><td><span style="color: ${confidenceColor}; font-weight: bold;">${safe(confidence)}%</span></td><td>Score indicating the likelihood of abuse (0-100)</td></tr>
+                                <tr><td>countryCode</td><td>${safe(apiData.countryCode)}</td><td>2-letter ISO country code</td></tr>
+                                <tr><td>usageType</td><td>${safe(apiData.usageType)}</td><td>Type of usage (e.g., Reserved, Fixed Line ISP, Government)</td></tr>
+                                <tr><td>isp</td><td>${safe(apiData.isp)}</td><td>Internet Service Provider name</td></tr>
+                                <tr><td>domain</td><td>${safe(apiData.domain)}</td><td>Associated domain, if any</td></tr>
                                 <tr><td>hostnames</td><td>${hostnames.length > 0 ? hostnames.join(', ') : 'N/A'}</td><td>Resolved hostnames for the IP</td></tr>
-                                <tr><td>isTor</td><td>${data.isTor ? 'True' : 'False'}</td><td>True if the IP is part of the Tor network</td></tr>
-                                <tr><td>totalReports</td><td>${data.totalReports || 0}</td><td>Total number of abuse reports received</td></tr>
-                                <tr><td>numDistinctUsers</td><td>${data.numDistinctUsers || 0}</td><td>Number of distinct users who reported this IP</td></tr>
+                                <tr><td>isTor</td><td>${apiData.isTor !== undefined ? (apiData.isTor ? 'True' : 'False') : 'N/A'}</td><td>True if the IP is part of the Tor network</td></tr>
+                                <tr><td>totalReports</td><td>${safe(apiData.totalReports)}</td><td>Total number of abuse reports received</td></tr>
+                                <tr><td>numDistinctUsers</td><td>${safe(apiData.numDistinctUsers)}</td><td>Number of distinct users who reported this IP</td></tr>
                                 <tr><td>lastReportedAt</td><td>${lastReportedAt}</td><td>Date/time of the most recent abuse report</td></tr>
                             </tbody>
                         </table>
@@ -4935,7 +4952,7 @@ Date:
                         </div>
                     </div>
                     <div class="card-body">
-                        <pre class="json-view" id="rawJsonAbuse">${JSON.stringify(data, null, 2)}</pre>
+                        <pre class="json-view" id="rawJsonAbuse">${JSON.stringify(apiData, null, 2)}</pre>
                     </div>
                 </div>
             `;

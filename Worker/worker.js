@@ -108,17 +108,36 @@ export default {
           fastPromises.push(
             (async () => {
               try {
+                console.log('AbuseIPDB: Checking IP', ipToCheck);
+                
                 const abuse = await fetch(
-                  `https://api.abuseipdb.com/api/v2/check?ipAddress=${ipToCheck}&maxAgeInDays=90`,
+                  `https://api.abuseipdb.com/api/v2/check?ipAddress=${ipToCheck}&maxAgeInDays=90&verbose=`,
                   { headers: { Key: abuseipdbKey, Accept: "application/json" } }
                 );
-                const abuseData = await abuse.json();
-                if ((type === "domain" || type === "url") && resolvedIp) {
-                  abuseData.resolvedFrom = type === "url" ? domainToResolve : value;
-                  abuseData.resolvedIp = resolvedIp;
+                
+                console.log('AbuseIPDB response status:', abuse.status);
+                
+                if (!abuse.ok) {
+                  const errorData = await abuse.json().catch(() => ({}));
+                  console.log('AbuseIPDB error:', errorData);
+                  results.abuseipdb = { error: errorData.errors?.[0]?.detail || `API error: ${abuse.status}` };
+                  return;
                 }
-                results.abuseipdb = abuseData;
+                
+                const abuseData = await abuse.json();
+                console.log('AbuseIPDB raw response:', JSON.stringify(abuseData).substring(0, 200));
+                
+                // Extract the data from the API response (AbuseIPDB returns { data: {...} })
+                let ipData = abuseData.data || abuseData;
+                console.log('AbuseIPDB extracted data:', ipData ? 'present' : 'missing');
+                
+                if ((type === "domain" || type === "url") && resolvedIp) {
+                  ipData.resolvedFrom = type === "url" ? domainToResolve : value;
+                  ipData.resolvedIp = resolvedIp;
+                }
+                results.abuseipdb = ipData;
               } catch (err) {
+                console.log('AbuseIPDB exception:', err.message);
                 results.abuseipdb = { error: err.message };
               }
             })()

@@ -25,8 +25,12 @@ function renderCombinedPanel() {
     }
 
     let abuseConfidence = 0;
+    let abuseReports = 0;
+    console.log('Combined Analysis - currentResults.abuseipdb:', currentResults.abuseipdb);
     if (currentResults.abuseipdb && currentResults.abuseipdb.abuseConfidenceScore !== undefined) {
         abuseConfidence = currentResults.abuseipdb.abuseConfidenceScore || 0;
+        abuseReports = currentResults.abuseipdb.totalReports || 0;
+        console.log('Combined Analysis - Abuse Confidence:', abuseConfidence, '%');
     }
 
     let urlscanMalicious = false;
