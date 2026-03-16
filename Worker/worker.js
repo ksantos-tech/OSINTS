@@ -107,7 +107,11 @@ export default {
         } else if (type === "domain") {
           vtEndpoint = `https://www.virustotal.com/api/v3/domains/${value}`;
         } else if (type === "url") {
-          const encoded = btoa(value);
+          // VT requires base64url encoding (RFC 4648): strip padding, + → -, / → _
+          const encoded = btoa(value)
+            .replace(/=+$/, "")
+            .replace(/\+/g, "-")
+            .replace(/\//g, "_");
           vtEndpoint = `https://www.virustotal.com/api/v3/urls/${encoded}`;
         }
 
@@ -115,8 +119,35 @@ export default {
           fastPromises.push(
             (async () => {
               try {
-                const vt = await fetch(vtEndpoint, { headers: { "x-apikey": vtApiKey } });
-                results.virustotal = await vt.json();
+                const vtHeaders = { "x-apikey": vtApiKey };
+                let vt = await fetch(vtEndpoint, { headers: vtHeaders });
+
+                // For URLs: VT returns 404 when it has never seen the URL before.
+                // Fix: POST to /urls to submit it for scanning, then GET the result.
+                if (vt.status === 404 && type === "url") {
+                  // Submit URL for analysis
+                  const submitResp = await fetch("https://www.virustotal.com/api/v3/urls", {
+                    method: "POST",
+                    headers: { ...vtHeaders, "Content-Type": "application/x-www-form-urlencoded" },
+                    body: `url=${encodeURIComponent(value)}`
+                  });
+                  if (!submitResp.ok) {
+                    const e = await submitResp.json().catch(() => ({}));
+                    results.virustotal = { error: e?.error?.message || `VT submit failed: ${submitResp.status}` };
+                    return;
+                  }
+                  // Wait briefly then re-fetch the analysis result
+                  await new Promise(r => setTimeout(r, 5000));
+                  vt = await fetch(vtEndpoint, { headers: vtHeaders });
+                }
+
+                const vtData = await vt.json();
+                // VT returns { error: { code, message } } on failure — flatten to a string
+                if (vtData.error && typeof vtData.error === "object") {
+                  results.virustotal = { error: vtData.error.message || vtData.error.code || "VirusTotal error" };
+                } else {
+                  results.virustotal = vtData;
+                }
               } catch (err) {
                 results.virustotal = { error: err.message };
               }
@@ -173,9 +204,12 @@ export default {
         }
       }
 
-      // WHOIS - supports domains and URLs (by extracting domain)
+      // WHOIS - supports domains and URLs (by extracting base domain, no subdomains)
       if (type === "domain" || type === "url") {
-        const domainForWhois = type === "url" ? domainToResolve : value;
+        const rawDomain = type === "url" ? domainToResolve : value;
+        // APILayer WHOIS requires the registrable base domain (e.g. abuseipdb.com),
+        // NOT a subdomain like www.abuseipdb.com — strip subdomains here.
+        const domainForWhois = rawDomain ? extractBaseDomain(rawDomain) : null;
         if (whoisApiKey && domainForWhois) {
           fastPromises.push(
             (async () => {
@@ -185,7 +219,13 @@ export default {
                   { headers: { "APIKEY": whoisApiKey } }
                 );
                 const whoisData = await whois.json();
-                results.whois = whoisData.result || whoisData;
+                // APILayer returns { result: {...} } on success
+                // or { message: "No WHOIS data available" } on failure (no .error key)
+                if (whoisData.result) {
+                  results.whois = whoisData.result;
+                } else {
+                  results.whois = { error: whoisData.message || whoisData.error || "No WHOIS data available" };
+                }
               } catch (err) {
                 results.whois = { error: err.message };
               }
@@ -300,6 +340,23 @@ export default {
     }
   }
 };
+
+// Extract registrable base domain from a hostname (strips subdomains incl. www)
+// Needed because APILayer WHOIS rejects subdomains like www.example.com
+function extractBaseDomain(hostname) {
+  // Strip www. prefix
+  if (hostname.startsWith("www.")) hostname = hostname.slice(4);
+
+  const parts = hostname.split(".");
+  if (parts.length <= 2) return hostname;
+
+  // Handle compound country-code TLDs: co.uk, com.au, org.br, etc.
+  const ccTLDs = ["co", "com", "org", "net", "gov", "ac", "edu", "or", "ne", "go"];
+  if (ccTLDs.includes(parts[parts.length - 2])) {
+    return parts.slice(-3).join(".");
+  }
+  return parts.slice(-2).join(".");
+}
 
 // Detect IOC type from value
 function detectIOCType(value) {

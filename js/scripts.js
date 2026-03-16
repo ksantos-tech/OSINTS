@@ -2224,10 +2224,12 @@ Date:
                 let method = 'GET';
                 let body = null;
                 
-                // For URLs, use btoa encoding like single scan (more reliable)
+                // For URLs, use base64url encoding (RFC 4648) as required by VirusTotal
                 if (type === 'url') {
-                    // Use base64 encoding without padding (VirusTotal requirement)
-                    const urlId = btoa(ioc).replace(/=+$/, '');
+                    const urlId = btoa(unescape(encodeURIComponent(ioc)))
+                        .replace(/=+$/, '')
+                        .replace(/\+/g, '-')
+                        .replace(/\//g, '_');
                     url = `https://www.virustotal.com/api/v3/urls/${urlId}`;
                 }
 
@@ -3405,17 +3407,23 @@ Date:
         }
 
         function showError(target, message) {
-            console.error(`Error in ${target}:`, message);
+            // Coerce message to a readable string in case an Error object or plain object was passed
+            let msg = message;
+            if (msg && typeof msg === 'object') {
+                msg = msg.message || msg.error || JSON.stringify(msg);
+            }
+            msg = String(msg || 'Unknown error');
+            console.error(`Error in ${target}:`, msg);
             const container = document.getElementById(target + 'Results');
             if (container) {
-                container.innerHTML = `<div class="error-message">${message}</div>`;
+                container.innerHTML = `<div class="error-message">${msg}</div>`;
             }
             const emptyEl = document.getElementById(target + 'Empty');
             if (emptyEl) {
                 emptyEl.style.display = 'none';
             }
             // Also show toast for visibility
-            showToast(message, 'error');
+            showToast(msg, 'error');
         }
 
         // CORS Proxy (fallback when direct API calls fail)
@@ -3472,7 +3480,11 @@ Date:
                 // Process VirusTotal results
                 if (data.virustotal) {
                     if (data.virustotal.error) {
-                        showError('vt', data.virustotal.error);
+                        // error may be an object (e.g. {message: "..."}), not always a string
+                        const vtErrMsg = typeof data.virustotal.error === 'string'
+                            ? data.virustotal.error
+                            : (data.virustotal.error.message || JSON.stringify(data.virustotal.error));
+                        showError('vt', vtErrMsg);
                     } else {
                         currentResults.vt = data.virustotal;
                         renderVirusTotal(data.virustotal);
@@ -3486,7 +3498,11 @@ Date:
                     const abuseData = data.abuseipdb.data || data.abuseipdb;
                     console.log('AbuseIPDB extracted data:', abuseData);
                     if (abuseData.error) {
-                        showError('abuseipdb', abuseData.error);
+                        // error may be an object, coerce to string
+                        const abuseErrMsg = typeof abuseData.error === 'string'
+                            ? abuseData.error
+                            : (abuseData.error.message || JSON.stringify(abuseData.error));
+                        showError('abuseipdb', abuseErrMsg);
                     } else {
                         currentResults.abuseipdb = abuseData;
                         renderAbuseIPDB(abuseData);
@@ -3496,10 +3512,16 @@ Date:
                 // Process WHOIS results
                 if (data.whois) {
                     if (data.whois.error) {
-                        showError('whois', data.whois.error);
+                        // error may be an object; Worker may fail to extract domain from a URL IOC
+                        const whoisErrMsg = typeof data.whois.error === 'string'
+                            ? data.whois.error
+                            : (data.whois.error.message || 'No WHOIS data available');
+                        showError('whois', whoisErrMsg);
                     } else {
-                        currentResults.whois = data.whois;
-                        renderWhois(data.whois);
+                        // Worker may return { result: {...} } or the unwrapped result directly
+                        const whoisData = data.whois.result || data.whois;
+                        currentResults.whois = whoisData;
+                        renderWhois(whoisData);
                     }
                 }
                 
@@ -3728,8 +3750,11 @@ Date:
                         endpoint = `https://www.virustotal.com/api/v3/domains/${ioc}`;
                         break;
                     case 'url':
-                        // Need to encode URL for VT (base64 without padding)
-                        const urlId = btoa(ioc).replace(/=+$/, '');
+                        // VT requires base64url encoding (RFC 4648): strip padding, replace + with -, / with _
+                        const urlId = btoa(unescape(encodeURIComponent(ioc)))
+                            .replace(/=+$/, '')
+                            .replace(/\+/g, '-')
+                            .replace(/\//g, '_');
                         endpoint = `https://www.virustotal.com/api/v3/urls/${urlId}`;
                         break;
                     case 'hash':
