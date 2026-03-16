@@ -24,6 +24,32 @@ export default {
     // Debug: Log which keys are available
     console.log("API Keys - VT:", !!vtApiKey, "AbuseIPDB:", !!abuseipdbKey, "WHOIS:", !!whoisApiKey, "URLScan:", !!urlscanKey);
 
+    // Route: /urlscan/result?uuid=<scanId>
+    // Polled by frontend when Worker returned status:"pending".
+    // GET /result requires API-Key per urlscan docs.
+    if (path === "/urlscan/result") {
+      const scanId = url.searchParams.get("uuid");
+      if (!scanId) return json({ error: "Missing uuid parameter" }, 400);
+      const key = request.headers.get("X-URLScan-Key") || env.URLSCAN_KEY;
+      if (!key) return json({ error: "URLScan API key not configured" }, 400);
+      try {
+        const r = await fetch(
+          `https://urlscan.io/api/v1/result/${scanId}/`,
+          {
+            headers: {
+              "API-Key": key,
+              "Accept": "application/json"
+            }
+          }
+        );
+        if (r.status === 200) return json(await r.json());
+        if (r.status === 404) return json({ status: "pending", uuid: scanId });
+        return json({ error: `URLScan returned HTTP ${r.status}` }, r.status);
+      } catch (err) {
+        return json({ error: err.message }, 500);
+      }
+    }
+
     // Route: /scan?value=<ioc>
     if (path !== "/scan" || !value) {
       return json({ error: "Use /scan?value=<ioc>" }, 400);
@@ -175,12 +201,14 @@ export default {
       // Execute fast API calls in parallel (no polling)
       await Promise.all(fastPromises);
 
-      // URLSCAN - submit scan then poll until result is ready
+      // URLSCAN — POST /scan then poll GET /result/{scanId}/
+      // Both endpoints require the API-Key header (per urlscan docs).
+      // Worker calls urlscan directly — no CORS proxy needed.
       if ((type === "url" || type === "domain") && urlscanKey) {
         try {
           const scanUrl = value.startsWith("http") ? value : "https://" + value;
 
-          // Step 1: Submit the scan
+          // Step 1: POST /api/v1/scan — requires API-Key
           const submitResp = await fetch("https://urlscan.io/api/v1/scan/", {
             method: "POST",
             headers: {
@@ -196,35 +224,28 @@ export default {
           }
 
           const submitData = await submitResp.json();
-          const uuid = submitData?.uuid;
+          const scanId = submitData?.uuid;
+          if (!scanId) throw new Error("URLScan returned no UUID.");
+          console.log("URLScan submitted, scanId:", scanId);
 
-          if (!uuid) {
-            throw new Error("URLScan returned no UUID after submission.");
-          }
-
-          console.log("URLScan submitted, UUID:", uuid);
-
-          // Step 2: Poll GET /result/{uuid} until HTTP 200
-          // Note: Cloudflare Workers have a 30s CPU limit on the free plan.
-          // We use a short initial delay + tight loop so we stay within budget.
-          // If the scan doesn't complete in time the frontend will continue
-          // polling via urlscan-poller.js using the uuid we return.
-          const POLL_INTERVAL_MS = 5000;
-          const MAX_ATTEMPTS     = 5;   // 5 × 5s = 25s max in the Worker
-          const INITIAL_DELAY_MS = 8000;
-
-          const sleep = (ms) => new Promise(r => setTimeout(r, ms));
-          await sleep(INITIAL_DELAY_MS);
+          // Step 2: Poll GET /api/v1/result/{scanId}/ — also requires API-Key
+          // Docs recommend: wait 10s, then poll every 2s.
+          // Free Worker CPU limit ~30s: 10s init + 4x2s = 18s — well within budget.
+          const sleep = ms => new Promise(r => setTimeout(r, ms));
+          await sleep(10000); // recommended 10s initial wait
 
           let finalResult = null;
-
-          for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
-            console.log(`URLScan polling attempt ${attempt}/${MAX_ATTEMPTS} for ${uuid}`);
-
+          for (let attempt = 1; attempt <= 8; attempt++) {
+            console.log(`URLScan poll ${attempt}/8 for ${scanId}`);
             try {
               const pollResp = await fetch(
-                `https://urlscan.io/api/v1/result/${uuid}/`,
-                { headers: { "API-Key": urlscanKey, "Accept": "application/json" } }
+                `https://urlscan.io/api/v1/result/${scanId}/`,
+                {
+                  headers: {
+                    "API-Key": urlscanKey,  // required — GET /result needs auth too
+                    "Accept": "application/json"
+                  }
+                }
               );
 
               if (pollResp.status === 200) {
@@ -232,41 +253,28 @@ export default {
                 console.log("URLScan complete on attempt", attempt);
                 break;
               }
-
               if (pollResp.status === 404) {
-                // Still processing — wait and retry
-                if (attempt < MAX_ATTEMPTS) {
-                  await sleep(POLL_INTERVAL_MS);
-                }
+                // Still processing — poll every 2s per docs recommendation
+                if (attempt < 8) await sleep(2000);
                 continue;
               }
-
-              if (pollResp.status === 429) {
-                console.warn("URLScan rate limited, backing off...");
-                await sleep(POLL_INTERVAL_MS * 2);
-                continue;
-              }
-
-              console.warn("Unexpected URLScan poll status:", pollResp.status);
-              await sleep(POLL_INTERVAL_MS);
-
+              console.warn("URLScan unexpected poll status:", pollResp.status);
+              if (attempt < 8) await sleep(2000);
             } catch (pollErr) {
-              console.warn("URLScan polling fetch error:", pollErr?.message);
-              await sleep(POLL_INTERVAL_MS);
+              console.warn("URLScan poll error:", pollErr?.message);
+              if (attempt < 8) await sleep(2000);
             }
           }
 
           if (finalResult) {
-            // Return the full result — frontend renderURLScan() will parse it
             results.urlscan = finalResult;
           } else {
-            // Worker timed out before scan finished — return uuid so the
-            // frontend poller (urlscan-poller.js) can continue waiting
+            // Still pending after budget — return scanId for frontend to continue
             results.urlscan = {
               status: "pending",
-              uuid: uuid,
-              resultUrl: `https://urlscan.io/result/${uuid}/`,
-              message: "Scan submitted. Frontend will continue polling."
+              uuid: scanId,
+              resultUrl: `https://urlscan.io/result/${scanId}/`,
+              message: "Scan submitted. Frontend will continue polling via Worker."
             };
           }
 

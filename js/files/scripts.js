@@ -3504,84 +3504,92 @@ Date:
                 }
                 
                 // Process URLScan results
-                // The Worker may return a pending response (status:"pending", _fullResult:null)
-                // because urlscan.io is async. If so, kick off client-side polling.
                 if (data.urlscan) {
                     if (data.urlscan.error) {
                         showError('urlscan', data.urlscan.error);
-                    } else if (data.urlscan.status === 'pending' || !data.urlscan._fullResult && !data.urlscan.verdicts) {
-                        // Worker returned the raw POST /scan response — poll for the real result
-                        console.log('URLScan: Worker returned pending result, starting client-side polling for UUID:', data.urlscan.uuid);
-                        if (data.urlscan.uuid) {
-                            // Fire-and-forget: poll without blocking the rest of the Worker response
-                            (async () => {
-                                const CORS_PROXY_PREFIX = 'https://corsproxy.io/?';
-                                const withProxy = (url) => CORS_PROXY_PREFIX + encodeURIComponent(url);
-                                const sleep = (ms) => new Promise(r => setTimeout(r, ms));
-                                const uuid = data.urlscan.uuid;
-                                const POLL_INTERVAL_MS = 5000;
-                                const MAX_ATTEMPTS = 24;
-                                const INITIAL_DELAY_MS = 8000;
 
-                                // Update loading message
-                                const setStatus = (msg) => {
-                                    const el = document.getElementById('urlscanStatusMsg');
-                                    if (el) el.textContent = msg;
-                                    else {
-                                        // Insert a loading state if not present
-                                        const c = document.getElementById('urlscanResults');
-                                        if (c && !c.querySelector('.loading')) {
-                                            c.innerHTML = `<div class="loading" id="urlscanLoadingState">
-                                                <div class="spinner"></div>
-                                                <span id="urlscanStatusMsg">${msg}</span>
-                                            </div>`;
+                    } else if (data.urlscan.status === 'pending' && data.urlscan.uuid) {
+                        // Worker submitted the scan but it wasn't ready within its CPU budget.
+                        // Poll the Worker's own /scan endpoint — it will call urlscan GET /result
+                        // server-side (no CORS, no corsproxy needed).
+                        const pendingUuid = data.urlscan.uuid;
+
+                        const uc = document.getElementById('urlscanResults');
+                        if (uc) uc.innerHTML = `<div class="loading">
+                            <div class="spinner"></div>
+                            <span id="urlscanStatusMsg">Scan submitted. Fetching result via Worker…</span>
+                        </div>`;
+                        const ue = document.getElementById('urlscanEmpty');
+                        if (ue) ue.style.display = 'none';
+
+                        (async () => {
+                            const sleep  = ms => new Promise(r => setTimeout(r, ms));
+                            const setMsg = msg => {
+                                const el = document.getElementById('urlscanStatusMsg');
+                                if (el) el.textContent = msg;
+                            };
+
+                            const POLL_MS   = 6000;
+                            const MAX_TRIES = 20;   // 20 x 6s = 2 min
+                            const INIT_MS   = 8000;
+                            await sleep(INIT_MS);
+
+                            for (let i = 1; i <= MAX_TRIES; i++) {
+                                setMsg(`Fetching URLScan result via Worker… (${i}/${MAX_TRIES})`);
+                                try {
+                                    // Re-use the Worker endpoint — it will call
+                                    // GET /result/{uuid} server-side without CORS issues
+                                    const workerUrl = WORKER_API_URL +
+                                        '/urlscan/result?uuid=' + encodeURIComponent(pendingUuid);
+                                    const resp = await fetch(workerUrl, {
+                                        headers: {
+                                            'Accept': 'application/json',
+                                            'X-URLScan-Key': keys.urlscan || ''
                                         }
-                                    }
-                                };
+                                    });
 
-                                setStatus(`Scan queued (…${uuid.slice(-8)}). Waiting for URLScan to complete…`);
-                                await sleep(INITIAL_DELAY_MS);
-
-                                for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
-                                    setStatus(`Waiting for URLScan result… (${attempt}/${MAX_ATTEMPTS})`);
-                                    try {
-                                        const pollResp = await fetch(
-                                            withProxy(`https://urlscan.io/api/v1/result/${uuid}/`),
-                                            { headers: { 'Accept': 'application/json' } }
-                                        );
-
-                                        if (pollResp.status === 200) {
-                                            const fullResult = await pollResp.json();
-                                            currentResults.urlscan = fullResult;
-                                            renderURLScan(fullResult);
-                                            try {
-                                                if (typeof updateReputationGrid === 'function') {
-                                                    updateReputationGrid(currentResults.vt, currentResults.abuseipdb, currentResults.whois, currentResults.urlscan);
-                                                }
-                                            } catch (e) {}
-                                            return;
-                                        }
-
-                                        if (pollResp.status === 404) {
-                                            if (attempt < MAX_ATTEMPTS) { await sleep(POLL_INTERVAL_MS); continue; }
+                                    if (resp.status === 200) {
+                                        const fullResult = await resp.json();
+                                        if (fullResult.status === 'pending') {
+                                            // Worker proxied a 404 — not ready yet
+                                            if (i < MAX_TRIES) { await sleep(POLL_MS); continue; }
                                             showError('urlscan',
-                                                `Scan still processing. <a href="https://urlscan.io/result/${uuid}/" ` +
-                                                `target="_blank" style="color:var(--accent-blue)">View on urlscan.io ↗</a>`);
+                                                `Scan still processing. ` +
+                                                `<a href="https://urlscan.io/result/${pendingUuid}/" ` +
+                                                `target="_blank" style="color:var(--accent-blue)">` +
+                                                `View on urlscan.io ↗</a>`);
                                             return;
                                         }
-
-                                        throw new Error(`HTTP ${pollResp.status}`);
-                                    } catch (e) {
-                                        if (attempt >= MAX_ATTEMPTS) showError('urlscan', 'URLScan polling failed: ' + e.message);
-                                        else await sleep(POLL_INTERVAL_MS);
+                                        if (fullResult.error) {
+                                            showError('urlscan', fullResult.error);
+                                            return;
+                                        }
+                                        currentResults.urlscan = fullResult;
+                                        renderURLScan(fullResult);
+                                        try {
+                                            if (typeof updateReputationGrid === 'function')
+                                                updateReputationGrid(currentResults.vt, currentResults.abuseipdb, currentResults.whois, fullResult);
+                                            if (typeof renderCombined === 'function') renderCombined();
+                                        } catch (_) {}
+                                        return;
                                     }
+
+                                    if (resp.status === 404) {
+                                        if (i < MAX_TRIES) { await sleep(POLL_MS); continue; }
+                                    }
+
+                                    showError('urlscan', `Worker returned HTTP ${resp.status} while fetching URLScan result.`);
+                                    return;
+
+                                } catch (fetchErr) {
+                                    if (i >= MAX_TRIES) showError('urlscan', 'URLScan polling failed: ' + fetchErr.message);
+                                    else await sleep(POLL_MS);
                                 }
-                            })();
-                        } else {
-                            showError('urlscan', 'URLScan returned a pending result with no UUID.');
-                        }
+                            }
+                        })();
+
                     } else {
-                        // Worker returned a complete result — render directly
+                        // Worker returned complete result — render directly
                         currentResults.urlscan = data.urlscan;
                         renderURLScan(data.urlscan);
                     }
@@ -4190,130 +4198,245 @@ Date:
             }
         }
 
-        // URLScan.io API - Submit new scan then poll until result is ready
+        // URLScan.io API - Submit new scan with polling for results
         async function scanURLScan(ioc) {
             const keys = getKeys();
-
-            // Show loading state with a live status message we can update
+            
+            // Show analysis in progress message
             const container = document.getElementById('urlscanResults');
             if (container) {
                 container.innerHTML = `
-                    <div class="loading" id="urlscanLoadingState">
+                    <div class="loading">
                         <div class="spinner"></div>
-                        <span id="urlscanStatusMsg">Submitting to URLScan.io…</span>
-                    </div>`;
+                        <span>URLScan analysis in progress...</span>
+                    </div>
+                `;
             }
             const urlscanEmpty = document.getElementById('urlscanEmpty');
             if (urlscanEmpty) urlscanEmpty.style.display = 'none';
-
-            // Helper: update the visible status line during polling
-            const setStatus = (msg) => {
-                const el = document.getElementById('urlscanStatusMsg');
-                if (el) el.textContent = msg;
-            };
-
-            // Ensure the URL has a protocol prefix
-            const scanUrl = ioc.startsWith('http') ? ioc : 'https://' + ioc;
-
-            const URLSCAN_API = 'https://urlscan.io/api/v1';
-            const CORS_PROXY_PREFIX = 'https://corsproxy.io/?';
-            const withProxy = (url) => CORS_PROXY_PREFIX + encodeURIComponent(url);
-
-            const POLL_INTERVAL_MS = 5000;   // 5 s between retries
-            const MAX_ATTEMPTS     = 24;     // 24 × 5 s = 2 min ceiling
-            const INITIAL_DELAY_MS = 8000;   // urlscan needs ~8 s before first result
-            const sleep = (ms) => new Promise(r => setTimeout(r, ms));
-
+            
+            // Extract URL - ensure it has protocol
+            let scanUrl = ioc.startsWith('http') ? ioc : 'https://' + ioc;
+            
+            console.log('URLScan: Submitting new scan for:', scanUrl);
+            
             try {
-                // ── Step 1: POST /scan ─────────────────────────────────────────
-                setStatus('Submitting URL to URLScan.io…');
-                console.log('URLScan: submitting scan for:', scanUrl);
-
-                const submitResp = await fetch(withProxy(`${URLSCAN_API}/scan/`), {
-                    method: 'POST',
+                // Use the search endpoint filtered by domain
+                // Build the search query as a plain string first
+                const searchQuery = `domain:${domain}`;
+                // Encode the query once
+                const encodedQuery = encodeURIComponent(searchQuery);
+                // Construct the API URL
+                const urlscanUrl = `https://urlscan.io/api/v1/search/?q=${encodedQuery}&size=25`;
+                // If using the CORS proxy, encode the entire URL only once
+                const proxyUrl = `https://corsproxy.io/?${encodeURIComponent(urlscanUrl)}`;
+                
+                const response = await fetch(proxyUrl, {
                     headers: {
-                        'Content-Type': 'application/json',
                         'API-Key': keys.urlscan,
                         'Accept': 'application/json'
-                    },
-                    body: JSON.stringify({ url: scanUrl, visibility: 'public' })
+                    }
                 });
 
-                if (!submitResp.ok) {
-                    const errBody = await submitResp.json().catch(() => ({}));
-                    throw new Error(`Submit failed (HTTP ${submitResp.status}): ${errBody.message || submitResp.statusText}`);
+                if (!response.ok) {
+                    const errorText = await response.text();
+                    throw new Error(`HTTP ${response.status}: ${errorText || 'Failed to fetch URLScan data'}`);
                 }
 
-                const submitData = await submitResp.json();
-                const uuid = submitData.uuid;
-                if (!uuid) throw new Error('URLScan returned no UUID after submission.');
-                console.log('URLScan: queued UUID:', uuid);
+                const data = await response.json();
+                console.log('URLScan search results:', data.total, 'results');
+                if (data.results && data.results.length > 0) {
+                    console.log('First result:', data.results[0]?._id, 'page.domain:', data.results[0]?.page?.domain, 'apexDomain:', data.results[0]?.page?.apexDomain);
+                    // Pick the best matching result for the queried domain
+                    const normalizeHost = (value) => {
+                        if (!value || typeof value !== 'string') return '';
+                        let host = value.trim().toLowerCase();
+                        host = host.replace(/^https?:\/\//, '').replace(/^www\./, '').replace(/\/$/, '');
+                        return host;
+                    };
 
-                // ── Step 2: Initial delay before first poll ────────────────────
-                setStatus(`Scan queued (…${uuid.slice(-8)}). Waiting for scan to initialize…`);
-                await sleep(INITIAL_DELAY_MS);
-
-                // ── Step 3: Poll GET /result/{uuid} until HTTP 200 ─────────────
-                let fullResult = null;
-
-                for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
-                    setStatus(`Waiting for scan to complete… (${attempt}/${MAX_ATTEMPTS})`);
-                    console.log(`URLScan: polling attempt ${attempt}/${MAX_ATTEMPTS} for uuid ${uuid}`);
-
-                    const pollResp = await fetch(
-                        withProxy(`${URLSCAN_API}/result/${uuid}/`),
-                        { headers: { 'Accept': 'application/json' } }
-                    );
-
-                    if (pollResp.status === 200) {
-                        fullResult = await pollResp.json();
-                        console.log('URLScan: scan complete on attempt', attempt);
-                        break;
-                    }
-
-                    if (pollResp.status === 404) {
-                        // Still processing — wait and retry
-                        if (attempt < MAX_ATTEMPTS) {
-                            await sleep(POLL_INTERVAL_MS);
-                            continue;
+                    const requestedHost = normalizeHost(domain);
+                    const getPrimaryTaskHost = (value) => {
+                        if (!value || typeof value !== 'string') return '';
+                        try {
+                            return normalizeHost(new URL(value).hostname);
+                        } catch (_) {
+                            return normalizeHost(value);
                         }
-                        // Timed out: show link so analyst can check manually
-                        const directUrl = `https://urlscan.io/result/${uuid}/`;
-                        showError('urlscan',
-                            `Scan still processing after ${MAX_ATTEMPTS} attempts. ` +
-                            `<a href="${directUrl}" target="_blank" rel="noopener noreferrer" ` +
-                            `style="color:var(--accent-blue)">View result on urlscan.io ↗</a>`
-                        );
-                        return;
+                    };
+
+                    const normalizeHostFromUrl = (value) => {
+                        if (!value || typeof value !== 'string') return '';
+                        try {
+                            return normalizeHost(new URL(value).hostname);
+                        } catch (_) {
+                            return normalizeHost(value);
+                        }
+                    };
+
+                    // Simple domain match: exact or subdomain of query domain
+                    const domainMatch = (resultUrl, queryDomain) => {
+                        if (!resultUrl || !queryDomain) return false;
+                        try {
+                            const host = new URL(resultUrl).hostname.toLowerCase();
+                            const domain = queryDomain.toLowerCase();
+                            return host === domain || host.endsWith('.' + domain);
+                        } catch (_) {
+                            return false;
+                        }
+                    };
+
+                    // Find first result where page.apexDomain matches query domain
+                    let searchResult = null;
+                    let effectiveUrl = '';
+
+                    for (const result of data.results) {
+                        const pageUrl = result?.page?.url || '';
+                        const taskUrl = result?.task?.url || '';
+                        const apexDomain = result?.page?.apexDomain || '';
+                        const pageDomain = result?.page?.domain || '';
+
+                        // Use apexDomain for accurate root domain matching
+                        if (apexDomain && apexDomain.toLowerCase() === requestedHost.toLowerCase()) {
+                            searchResult = result;
+                            effectiveUrl = pageUrl || taskUrl;
+                            break;
+                        }
+                        // Fallback: check page.domain for subdomain matches
+                        if (pageDomain && requestedHost && (
+                            pageDomain.toLowerCase() === requestedHost ||
+                            pageDomain.toLowerCase().endsWith('.' + requestedHost)
+                        )) {
+                            searchResult = result;
+                            effectiveUrl = pageUrl || taskUrl;
+                            break;
+                        }
                     }
 
-                    // Any other HTTP status is a fatal error
-                    throw new Error(`Unexpected HTTP ${pollResp.status} while polling URLScan result.`);
-                }
-
-                if (!fullResult) {
-                    showError('urlscan', 'URLScan did not return a result.');
-                    return;
-                }
-
-                // ── Step 4: Store and render the real result ───────────────────
-                setStatus('Scan complete. Rendering results…');
-                currentResults.urlscan = fullResult;
-                renderURLScan(fullResult);
-
-                // Refresh combined view if it was already rendered
-                const combinedContainer = document.getElementById('combinedResults');
-                if (combinedContainer && currentResults.vt) {
-                    renderCombined();
-                }
-
-                // Refresh reputation grid
-                try {
-                    if (typeof updateReputationGrid === 'function') {
-                        updateReputationGrid(currentResults.vt, currentResults.abuseipdb, currentResults.whois, currentResults.urlscan);
+                    if (!searchResult) {
+                        // Fallback: try broader search with page.url query
+                        const fallbackQuery = `page.url:*${requestedHost}*`;
+                        const fallbackUrl = `https://urlscan.io/api/v1/search/?q=${encodeURIComponent(fallbackQuery)}&size=10`;
+                        const fallbackProxyUrl = `https://corsproxy.io/?${encodeURIComponent(fallbackUrl)}`;
+                        
+                        try {
+                            const fallbackResponse = await fetch(fallbackProxyUrl, {
+                                headers: {
+                                    'API-Key': keys.urlscan,
+                                    'Accept': 'application/json'
+                                }
+                            });
+                            if (fallbackResponse.ok) {
+                                const fallbackData = await fallbackResponse.json();
+                                if (fallbackData.results && fallbackData.results.length > 0) {
+                                    // Use first fallback result
+                                    searchResult = fallbackData.results[0];
+                                    console.log('URLScan fallback found result:', searchResult?._id);
+                                }
+                            }
+                        } catch (e) {
+                            console.error('URLScan fallback query failed:', e);
+                        }
+                        
+                        if (!searchResult) {
+                            showError('urlscan', `No URLScan result found for domain ${requestedHost}`);
+                            return;
+                        }
                     }
-                } catch (e) {
-                    console.warn('Reputation grid update failed:', e);
+                    const uuid = searchResult?._id;
+                    
+                    // Fetch the full result using the UUID
+                    // If 413 (payload too large), fallback to search result
+                    let fullResult = null;
+                    if (uuid) {
+                        try {
+                            const resultUrl = `https://urlscan.io/api/v1/result/${uuid}/`;
+                            const resultProxyUrl = `https://corsproxy.io/?${encodeURIComponent(resultUrl)}`;
+                            const resultResponse = await fetch(resultProxyUrl, {
+                                headers: {
+                                    'API-Key': keys.urlscan,
+                                    'Accept': 'application/json'
+                                }
+                            });
+                            if (resultResponse.ok) {
+                                fullResult = await resultResponse.json();
+                            } else if (resultResponse.status === 413) {
+                                console.warn('URLScan full result too large (413), using search result fallback.');
+                                fullResult = searchResult; // Use search result directly
+                            }
+                        } catch (e) {
+                            console.error('Error fetching full URLScan result:', e);
+                            fullResult = searchResult; // Fallback to search result
+                        }
+                    }
+                    
+                    const mergedResult = fullResult || searchResult;
+                    currentResults.urlscan = mergedResult;
+                    
+                    // Safely render with null check
+                    const urlscanContainer = document.getElementById('urlscanResults');
+                    if (urlscanContainer) {
+                        renderURLScan(mergedResult);
+                    }
+                    
+                    // Update combined view safely
+                    const combinedContainer = document.getElementById('combinedResults');
+                    if (combinedContainer && currentResults.vt) {
+                        renderCombined();
+                    }
+                } else {
+                    // Try alternative query with page.url
+                    const urlQuery = `page.url:${domain}`;
+                    const altUrlscanUrl = `https://urlscan.io/api/v1/search/?q=${encodeURIComponent(urlQuery)}&size=1`;
+                    const altProxyUrl = `https://corsproxy.io/?${encodeURIComponent(altUrlscanUrl)}`;
+                    
+                    const altResponse = await fetch(altProxyUrl, {
+                        headers: {
+                            'API-Key': keys.urlscan,
+                            'Accept': 'application/json'
+                        }
+                    });
+                    
+                    if (altResponse.ok) {
+                        const altData = await altResponse.json();
+                        if (altData.results && altData.results.length > 0) {
+                            const searchResult = altData.results[0];
+                            const uuid = searchResult._id;
+                            
+                            // Fetch the full result using the UUID
+                            let fullResult = null;
+                            if (uuid) {
+                                try {
+                                    const resultUrl = `https://urlscan.io/api/v1/result/${uuid}/`;
+                                    const resultProxyUrl = `https://corsproxy.io/?${encodeURIComponent(resultUrl)}`;
+                                    const resultResponse = await fetch(resultProxyUrl, {
+                                        headers: {
+                                            'API-Key': keys.urlscan,
+                                            'Accept': 'application/json'
+                                        }
+                                    });
+                                    if (resultResponse.ok) {
+                                        fullResult = await resultResponse.json();
+                                    }
+                                } catch (e) {
+                                    console.error('Error fetching full URLScan result:', e);
+                                    fullResult = searchResult;
+                                }
+                            }
+                            
+                            currentResults.urlscan = fullResult || searchResult;
+                            renderURLScan(currentResults.urlscan);
+                            
+                            const combinedContainer = document.getElementById('combinedResults');
+                            if (combinedContainer && currentResults.vt) {
+                                renderCombined();
+                            }
+                        } else {
+                            showError('urlscan', 'URLScan data not available.');
+                        }
+                    } else {
+                        showError('urlscan', 'URLScan data not available.');
+                    }
                 }
 
             } catch (error) {
@@ -4321,6 +4444,7 @@ Date:
                 showError('urlscan', error.message);
             }
         }
+
         function renderURLScan(data) {
             const container = document.getElementById('urlscanResults');
             
