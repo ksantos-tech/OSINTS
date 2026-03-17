@@ -754,7 +754,15 @@ function renderThreatFox(data) {
                     </div>
                 </div>
             </div>
+            <!-- MITRE ATT&CK badges injected async by lookupMITRE() -->
+            <div style="margin-top:10px;padding-top:10px;border-top:1px solid #30363d;">
+                <span style="color:var(--text-muted);font-size:11px;">MITRE ATT&CK</span>
+                <div id="mitreBadges" style="margin-top:5px;display:flex;gap:5px;flex-wrap:wrap;">
+                    <span style="color:var(--text-muted);font-size:11px;font-style:italic;">Looking up techniques…</span>
+                </div>
+            </div>
         </div>
+    </div>
 
         <!-- IOC table -->
         <div class="result-card">
@@ -780,6 +788,22 @@ function renderThreatFox(data) {
                 </table>
             </div>
         </div>`;
+
+    // Async: lookup MITRE ATT&CK techniques for the malware family
+    const malwareFamily = first.malware_printable || first.malware || '';
+    if (malwareFamily && typeof lookupMITRE === 'function') {
+        lookupMITRE(malwareFamily).then(mitreData => {
+            const el = document.getElementById('mitreBadges');
+            if (!el) return;
+            if (mitreData) {
+                el.innerHTML = typeof renderMITREBadges === 'function'
+                    ? renderMITREBadges(mitreData)
+                    : mitreData.techniques.map(t => `<span style="font-size:10px;padding:2px 7px;border-radius:4px;background:rgba(163,113,247,0.15);color:#a371f7;border:1px solid rgba(163,113,247,0.3);">${t}</span>`).join(' ');
+            } else {
+                el.innerHTML = '<span style="color:var(--text-muted);font-size:11px;">No techniques mapped for this family</span>';
+            }
+        });
+    }
 }
 
 // ─── URLhaus render ──────────────────────────────────────────────────────────

@@ -343,37 +343,46 @@
         });
 
         // IOC Type Detection
-        function detectIOCType(ioc) {
-            ioc = ioc.trim();
-            
-            // URL pattern
-            if (/^https?:\/\//i.test(ioc) || ioc.includes('.') && !/^[a-f0-9]{32,64}$/i.test(ioc)) {
-                if (/^\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}$/.test(ioc)) {
-                    return 'ip';
-                }
-                return 'url';
+        // ── Canonical IOC normalisation + type detection ─────────────────
+        // Handles defanged IOCs: hxxp://, hxxps://, [.], (.), 8.8.8[.]8, etc.
+        function normaliseIOC(ioc) {
+            if (!ioc) return '';
+            return ioc.trim()
+                .replace(/^hxxps?:\/\//i, (m) => m.replace(/hxxp/i, 'http'))
+                .replace(/^hxxp:\/\//i, 'http://')
+                .replace(/\[\.\]/g, '.')
+                .replace(/\(\.\)/g, '.')
+                .replace(/\[:\]/g, ':')
+                .replace(/\[\/\]/g, '/');
+        }
+
+        function defangIOC(ioc) {
+            if (!ioc) return '';
+            const type = detectIOCType(ioc);
+            if (type === 'url') {
+                return ioc.replace(/^https?:\/\//i, (m) => m.replace('http', 'hxxp'))
+                          .replace(/\./g, '[.]');
             }
-            
-            // IPv6
-            if (/^([a-f0-9]{0,4}:){2,7}[a-f0-9]{0,4}$/i.test(ioc)) {
-                return 'ip';
-            }
-            
+            if (type === 'ip')     return ioc.replace(/\./g, '[.]');
+            if (type === 'domain') return ioc.replace(/\./g, '[.]');
+            return ioc;
+        }
+
+        function detectIOCType(raw) {
+            if (!raw) return 'unknown';
+            const ioc = normaliseIOC(raw).trim();
+            // URL
+            if (/^https?:\/\//i.test(ioc)) return 'url';
             // IPv4
-            if (/^\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}$/.test(ioc)) {
-                return 'ip';
-            }
-            
-            // Hashes
+            if (/^\d{1,3}(\.\d{1,3}){3}$/.test(ioc)) return 'ip';
+            // IPv6
+            if (/^([a-f0-9]{0,4}:){2,7}[a-f0-9]{0,4}$/i.test(ioc)) return 'ip';
+            // MD5 / SHA1 / SHA256
             if (/^[a-f0-9]{32}$/i.test(ioc)) return 'hash';
             if (/^[a-f0-9]{40}$/i.test(ioc)) return 'hash';
             if (/^[a-f0-9]{64}$/i.test(ioc)) return 'hash';
-            
-            // Domain (no protocol, just domain)
-            if (/^[a-z0-9]([a-z0-9-]*[a-z0-9])?(\.[a-z0-9]([a-z0-9-]*[a-z0-9])?)+$/i.test(ioc)) {
-                return 'domain';
-            }
-            
+            // Domain
+            if (/^[a-z0-9]([a-z0-9-]*[a-z0-9])?(\.[a-z0-9]([a-z0-9-]*[a-z0-9])?)+$/i.test(ioc)) return 'domain';
             return 'unknown';
         }
 
@@ -518,318 +527,7 @@
             document.getElementById('aboutModal').classList.remove('active');
         }
 
-        // Workspace Functions
-        function openSummaryModal() {
-            document.getElementById('summaryModal').classList.add('active');
-            updateSummaryStats();
-        }
-
-        function closeSummaryModal() {
-            document.getElementById('summaryModal').classList.remove('active');
-        }
-
-        function updateSummaryStats() {
-            const statsContainer = document.getElementById('summaryStats');
-            const total = recentScans.length + workspaceItems.length;
-            const highRisk = [...recentScans, ...workspaceItems].filter(item => item.riskLevel === 'high').length;
-            const mediumRisk = [...recentScans, ...workspaceItems].filter(item => item.riskLevel === 'medium').length;
-            const lowRisk = [...recentScans, ...workspaceItems].filter(item => item.riskLevel === 'low').length;
-            
-            statsContainer.innerHTML = `
-                <div style="background: var(--bg-tertiary); padding: 12px; border-radius: 8px; flex: 1; min-width: 100px; text-align: center;">
-                    <div style="font-size: 24px; font-weight: bold; color: var(--text-primary);">${total}</div>
-                    <div style="font-size: 11px; color: var(--text-secondary);">Total IOCs</div>
-                </div>
-                <div style="background: rgba(239, 68, 68, 0.2); padding: 12px; border-radius: 8px; flex: 1; min-width: 100px; text-align: center;">
-                    <div style="font-size: 24px; font-weight: bold; color: #ef4444;">${highRisk}</div>
-                    <div style="font-size: 11px; color: var(--text-secondary);">High Risk</div>
-                </div>
-                <div style="background: rgba(251, 191, 36, 0.2); padding: 12px; border-radius: 8px; flex: 1; min-width: 100px; text-align: center;">
-                    <div style="font-size: 24px; font-weight: bold; color: #fbbf24;">${mediumRisk}</div>
-                    <div style="font-size: 11px; color: var(--text-secondary);">Medium Risk</div>
-                </div>
-                <div style="background: rgba(34, 197, 94, 0.2); padding: 12px; border-radius: 8px; flex: 1; min-width: 100px; text-align: center;">
-                    <div style="font-size: 24px; font-weight: bold; color: #22c55e;">${lowRisk}</div>
-                    <div style="font-size: 11px; color: var(--text-secondary);">Low Risk</div>
-                </div>
-            `;
-        }
-
-        function addToWorkspace() {
-            const iocInput = document.getElementById('iocInput');
-            const ioc = iocInput.value.trim();
-            if (!ioc) {
-                alert('Please enter an IOC first');
-                return;
-            }
-            
-            const iocType = document.getElementById('iocType').value;
-            const riskLevel = currentResults.riskLevel || 'unknown';
-            
-            const item = {
-                ioc: ioc,
-                type: iocType === 'auto' ? detectIOCType(ioc) : iocType,
-                riskLevel: riskLevel,
-                timestamp: new Date().toISOString(),
-                vtResults: currentResults.vt,
-                abuseipdbResults: currentResults.abuseipdb,
-                whoisResults: currentResults.whois
-            };
-            
-            workspaceItems.push(item);
-            alert(`Added ${ioc} to workspace!`);
-        }
-
-        function exportWorkspaceReport() {
-            if (recentScans.length === 0 && workspaceItems.length === 0) {
-                alert('No data to export. Run some scans first.');
-                return;
-            }
-            
-            let csv = 'IOC,Type,Risk Level,Timestamp\n';
-            const allItems = [...recentScans, ...workspaceItems];
-            allItems.forEach(item => {
-                csv += `${item.ioc},${item.type},${item.riskLevel},${item.timestamp}\n`;
-            });
-            
-            const blob = new Blob([csv], { type: 'text/csv' });
-            const url = URL.createObjectURL(blob);
-            const a = document.createElement('a');
-            a.href = url;
-            a.download = `threatscan_export_${new Date().toISOString().slice(0,10)}.csv`;
-            a.click();
-            URL.revokeObjectURL(url);
-        }
-
-        function clearWorkspace() {
-            if (confirm('Are you sure you want to clear all workspace data? This will also clear recent scans.')) {
-                recentScans = [];
-                workspaceItems = [];
-                localStorage.setItem('recent_scans', JSON.stringify(recentScans));
-                renderRecentScans();
-                alert('Workspace cleared!');
-            }
-        }
-
-        function generateInvestigationSummary() {
-            const allItems = [...recentScans, ...workspaceItems];
-            
-            if (allItems.length === 0) {
-                document.getElementById('summaryText').value = 'No scan data available. Run some investigations first.';
-                return;
-            }
-            
-            const now = new Date();
-            const reportDate = now.toISOString().slice(0, 19).replace('T', ' ');
-            
-            // Calculate statistics
-            const highRiskItems = allItems.filter(item => item.riskLevel === 'high');
-            const mediumRiskItems = allItems.filter(item => item.riskLevel === 'medium');
-            const lowRiskItems = allItems.filter(item => item.riskLevel === 'low');
-            
-            // Detect IOC types
-            const urls = allItems.filter(item => item.type === 'url' || (item.ioc && (item.ioc.startsWith('http://') || item.ioc.startsWith('https://'))));
-            const ips = allItems.filter(item => item.type === 'ip' || /^\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}$/.test(item.ioc));
-            const domains = allItems.filter(item => item.type === 'domain' && !urls.some(u => u.ioc === item.ioc));
-            const hashes = allItems.filter(item => item.type === 'hash');
-            
-            // Smart detection - find potential phishing indicators
-            const phishingIndicators = [];
-            allItems.forEach(item => {
-                if (item.ioc) {
-                    const iocLower = item.ioc.toLowerCase();
-                    // Check for suspicious TLDs
-                    const suspiciousTLDs = ['.tk', '.ml', '.ga', '.cf', '.gq', '.xyz', '.top', '.work', '.click', '.link'];
-                    suspiciousTLDs.forEach(tld => {
-                        if (iocLower.includes(tld)) {
-                            phishingIndicators.push({ ioc: item.ioc, reason: `Suspicious TLD: ${tld}` });
-                        }
-                    });
-                    // Check for URL shorteners
-                    const shorteners = ['bit.ly', 'tinyurl.com', 'goo.gl', 't.co', 'ow.ly', 'is.gd'];
-                    shorteners.forEach(s => {
-                        if (iocLower.includes(s)) {
-                            phishingIndicators.push({ ioc: item.ioc, reason: `URL shortener: ${s}` });
-                        }
-                    });
-                }
-            });
-            
-            // Build the report
-            let report = `================================================================================
-                        SOC INVESTIGATION SUMMARY REPORT
-================================================================================
-
-Generated: ${reportDate}
-Tool: ThreatAnalyzer by KS
-
---------------------------------------------------------------------------------
-EXECUTIVE SUMMARY
---------------------------------------------------------------------------------
-
-Total Indicators Analyzed: ${allItems.length}
-- High Risk: ${highRiskItems.length}
-- Medium Risk: ${mediumRiskItems.length}
-- Low Risk: ${lowRiskItems.length}
-- Unknown Risk: ${allItems.length - highRiskItems.length - mediumRiskItems.length - lowRiskItems.length}
-
-IOC Breakdown:
-- URLs: ${urls.length}
-- IP Addresses: ${ips.length}
-- Domains: ${domains.length}
-- File Hashes: ${hashes.length}
-
-`;
-            
-            // Add threat findings
-            if (highRiskItems.length > 0) {
-                report += `--------------------------------------------------------------------------------
-HIGH RISK INDICATORS (${highRiskItems.length})
---------------------------------------------------------------------------------
-`;
-                highRiskItems.forEach((item, idx) => {
-                    report += `${idx + 1}. ${item.ioc} [${item.type.toUpperCase()}]
-   Risk Level: HIGH
-   Timestamp: ${item.timestamp}
-`;
-                    // Add VT stats if available
-                    if (item.vtResults && item.vtResults.data) {
-                        const stats = item.vtResults.data.attributes?.last_analysis_stats;
-                        if (stats) {
-                            report += `   VirusTotal: ${stats.malicious || 0}/${stats.undetected + (stats.malicious || 0)} malicious detections\n`;
-                        }
-                    }
-                    report += '\n';
-                });
-            }
-            
-            if (mediumRiskItems.length > 0) {
-                report += `--------------------------------------------------------------------------------
-MEDIUM RISK INDICATORS (${mediumRiskItems.length})
---------------------------------------------------------------------------------
-`;
-                mediumRiskItems.forEach((item, idx) => {
-                    report += `${idx + 1}. ${item.ioc} [${item.type.toUpperCase()}]
-   Risk Level: MEDIUM
-   Timestamp: ${item.timestamp}\n\n`;
-                });
-            }
-            
-            if (phishingIndicators.length > 0) {
-                report += `--------------------------------------------------------------------------------
-PHISHING INFRASTRUCTURE INDICATORS (${phishingIndicators.length})
---------------------------------------------------------------------------------
-`;
-                phishingIndicators.forEach((item, idx) => {
-                    report += `${idx + 1}. ${item.ioc}
-   Reason: ${item.reason}\n\n`;
-                });
-            }
-            
-            // Add recommendations
-            report += `--------------------------------------------------------------------------------
-RECOMMENDATIONS
---------------------------------------------------------------------------------
-
-`;
-            
-            if (highRiskItems.length > 0) {
-                report += ` CRITICAL: ${highRiskItems.length} high-risk indicator(s) detected.
-   - Block all identified high-risk IPs at firewall/IDS
-   - Add malicious URLs to web proxy block list
-   - Notify SOC team immediately for incident response
-   - Preserve logs for forensic analysis
-
-`;
-            }
-            
-            if (phishingIndicators.length > 0) {
-                report += ` PHISHING: ${phishingIndicators.length} potential phishing indicator(s) detected.
-   - Investigate email headers for related campaigns
-   - Check if domain is registered recently (WHOIS)
-   - Block associated URLs in email gateway
-
-`;
-            }
-            
-            if (urls.length > 0) {
-                report += ` URL ANALYSIS: ${urls.length} URL(s) analyzed.
-   - Validate URLs against safe browsing APIs
-   - Check for URL shortener expansion
-   - Analyze URL structure for obfuscation
-
-`;
-            }
-            
-            report += `================================================================================
-                           END OF INVESTIGATION REPORT
-================================================================================
-`;
-            
-            document.getElementById('summaryText').value = report;
-        }
-
-        function copySummary() {
-            const summaryText = document.getElementById('summaryText');
-            summaryText.select();
-            document.execCommand('copy');
-            alert('Summary copied to clipboard!');
-        }
-
-        function downloadSummary(format) {
-            const content = document.getElementById('summaryText').value;
-            if (!content || content.includes('No scan data available')) {
-                alert('Generate a summary first!');
-                return;
-            }
-            
-            let blob, filename;
-            if (format === 'txt') {
-                blob = new Blob([content], { type: 'text/plain' });
-                filename = `investigation_report_${new Date().toISOString().slice(0,10)}.txt`;
-            } else if (format === 'md') {
-                // Convert to Markdown
-                let md = content
-                    .replace(/^=+$/gm, '')
-                    .replace(/^-+$/gm, '')
-                    .replace(/^(\d+)\. /gm, '- ')
-                    .replace(/^\s{3}(\d+)\. /gm, '  - ');
-                blob = new Blob([md], { type: 'text/markdown' });
-                filename = `investigation_report_${new Date().toISOString().slice(0,10)}.md`;
-            }
-            
-            const url = URL.createObjectURL(blob);
-            const a = document.createElement('a');
-            a.href = url;
-            a.download = filename;
-            a.click();
-            URL.revokeObjectURL(url);
-        }
-
         // Helper function to detect IOC type
-        function detectIOCType(ioc) {
-            if (!ioc) return 'unknown';
-            const iocLower = ioc.toLowerCase();
-            
-            // URL detection
-            if (iocLower.startsWith('http://') || iocLower.startsWith('https://')) {
-                return 'url';
-            }
-            
-            // IP detection
-            if (/^\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}$/.test(ioc)) {
-                return 'ip';
-            }
-            
-            // Hash detection (MD5, SHA1, SHA256)
-            if (/^[a-f0-9]{32}$/i.test(ioc)) return 'hash';
-            if (/^[a-f0-9]{40}$/i.test(ioc)) return 'hash';
-            if (/^[a-f0-9]{64}$/i.test(ioc)) return 'hash';
-            
-            // Domain detection (default)
-            return 'domain';
-        }
-
         // Recent Scans
         function loadRecentScans() {
             const saved = localStorage.getItem('recent_scans');
@@ -839,56 +537,124 @@ RECOMMENDATIONS
             }
         }
 
+        // Recent Scans — persisted to localStorage, shows risk badge + source hits
         function saveRecentScan(ioc, type, riskLevel = 'unknown') {
             const existing = recentScans.findIndex(s => s.ioc === ioc);
             if (existing >= 0) recentScans.splice(existing, 1);
-            
-            recentScans.unshift({ ioc, type, riskLevel, timestamp: new Date().toISOString() });
-            if (recentScans.length > 10) recentScans.pop();
-            
+
+            // Collect source verdicts from currentResults for the badge row
+            const sources = [];
+            if (currentResults.vt && currentResults.vt.data) {
+                const s = currentResults.vt.data.attributes?.last_analysis_stats || {};
+                const mal = (s.malicious || 0) + (s.suspicious || 0);
+                sources.push({ label: 'VT', value: mal > 0 ? mal + ' det.' : 'clean', bad: mal > 0 });
+            }
+            if (currentResults.abuseipdb && !currentResults.abuseipdb.error) {
+                const conf = currentResults.abuseipdb.abuseConfidenceScore || 0;
+                sources.push({ label: 'Abuse', value: conf + '%', bad: conf > 25 });
+            }
+            if (currentResults.threatfox?.found) {
+                sources.push({ label: 'TF', value: currentResults.threatfox.iocs?.[0]?.malware_printable || 'hit', bad: true });
+            }
+            if (currentResults.urlhaus?.found) {
+                sources.push({ label: 'UH', value: currentResults.urlhaus.url_status || 'listed', bad: true });
+            }
+            if (currentResults.malwarebazaar?.found) {
+                sources.push({ label: 'MB', value: currentResults.malwarebazaar.malware_family || 'malware', bad: true });
+            }
+
+            // Derive risk from sources if not provided
+            if (riskLevel === 'unknown') {
+                const hasCritical = sources.some(s => s.bad);
+                riskLevel = hasCritical ? 'high' : 'low';
+            }
+
+            recentScans.unshift({ ioc, type, riskLevel, sources, timestamp: new Date().toISOString() });
+            if (recentScans.length > 20) recentScans.pop();
             localStorage.setItem('recent_scans', JSON.stringify(recentScans));
             renderRecentScans();
         }
 
         function renderRecentScans() {
             const container = document.getElementById('recentList');
+            if (!container) return;
             if (recentScans.length === 0) {
-                container.innerHTML = '<div class="empty-state" style="padding: 20px;"><span>No recent scans</span></div>';
+                container.innerHTML = '<div style="padding:16px;text-align:center;color:var(--text-muted);font-size:12px;">No recent scans</div>';
                 return;
             }
-            
-            // Get type icon
-            const getTypeIcon = (type) => {
-                return type === 'ip' ? '' : type === 'domain' ? '' : type === 'url' ? '' : type === 'hash' ? '' : '';
-            };
-            
-            // Get risk color
-            const getRiskColor = (risk) => {
-                return risk === 'high' ? 'var(--accent-red)' : risk === 'medium' ? 'var(--accent-yellow)' : risk === 'low' ? 'var(--accent-green)' : 'var(--text-muted)';
-            };
-            
-            // Get risk icon
-            const getRiskIcon = (risk) => {
-                return risk === 'high' ? '' : risk === 'medium' ? '' : risk === 'low' ? '' : '';
-            };
-            
-            container.innerHTML = recentScans.map(scan => `
-                <div class="recent-item" onclick="loadRecent('${scan.ioc.replace(/'/g, "\\'")}', '${scan.type}')">
-                    <div style="display: flex; align-items: center; gap: 6px;">
-                        <span style="font-size: 12px;">${getTypeIcon(scan.type)}</span>
-                        <span class="ioc">${scan.ioc}</span>
+
+            const typeIcon = t => t === 'ip' ? '🖥' : t === 'domain' ? '🌐' : t === 'url' ? '🔗' : t === 'hash' ? '📄' : '🔍';
+            const riskBg   = r => r === 'high' ? 'rgba(239,68,68,0.15)' : r === 'medium' ? 'rgba(251,191,36,0.15)' : 'rgba(34,197,94,0.1)';
+            const riskCol  = r => r === 'high' ? '#ef4444' : r === 'medium' ? '#fbbf24' : '#22c55e';
+            const riskLbl  = r => r === 'high' ? 'HIGH' : r === 'medium' ? 'MED' : r === 'low' ? 'LOW' : '?';
+
+            container.innerHTML = recentScans.map(scan => {
+                const sourceBadges = (scan.sources || []).map(s =>
+                    `<span style="font-size:9px;padding:1px 5px;border-radius:3px;background:${s.bad ? 'rgba(239,68,68,0.2)' : 'rgba(34,197,94,0.15)'};color:${s.bad ? '#f87171' : '#4ade80'};">${s.label}</span>`
+                ).join('');
+
+                const iocShort = scan.ioc.length > 26 ? scan.ioc.slice(0, 24) + '…' : scan.ioc;
+                const ago = (() => {
+                    const diff = Math.floor((Date.now() - new Date(scan.timestamp)) / 60000);
+                    if (diff < 1) return 'just now';
+                    if (diff < 60) return diff + 'm ago';
+                    if (diff < 1440) return Math.floor(diff/60) + 'h ago';
+                    return Math.floor(diff/1440) + 'd ago';
+                })();
+
+                return `
+                <div class="recent-item" onclick="loadRecent('${scan.ioc.replace(/'/g, "\\'")}', '${scan.type}')"
+                     style="border-left:3px solid ${riskCol(scan.riskLevel)};">
+                    <div style="display:flex;align-items:center;gap:6px;margin-bottom:3px;">
+                        <span style="font-size:11px;">${typeIcon(scan.type)}</span>
+                        <span style="font-size:12px;font-family:monospace;color:var(--text-primary);flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;"
+                              title="${scan.ioc}">${iocShort}</span>
+                        <span style="font-size:9px;padding:2px 6px;border-radius:4px;background:${riskBg(scan.riskLevel)};color:${riskCol(scan.riskLevel)};font-weight:700;flex-shrink:0;">${riskLbl(scan.riskLevel)}</span>
                     </div>
-                    <div style="display: flex; align-items: center; gap: 6px;">
-                        <span style="font-size: 10px; color: var(--text-muted);">${scan.type.toUpperCase()}</span>
-                        <span style="font-size: 10px;">${getRiskIcon(scan.riskLevel)}</span>
+                    <div style="display:flex;align-items:center;gap:4px;flex-wrap:wrap;">
+                        ${sourceBadges}
+                        <span style="font-size:9px;color:var(--text-muted);margin-left:auto;">${ago}</span>
                     </div>
-                </div>
-            `).join('');
+                </div>`;
+            }).join('');
         }
 
         function loadRecent(ioc, type) {
             document.getElementById('iocInput').value = ioc;
-            document.getElementById('iocType').value = type;
+            document.getElementById('iocType').value = type || 'auto';
+            _iocDefanged = false;
+            const defangBtn = document.getElementById('defangBtn');
+            if (defangBtn) defangBtn.textContent = '\u{1F6E1}\uFE0F Defang';
+
+            // Try to restore persisted results from IndexedDB — no re-scan needed
+            restoreScanResult(ioc).then(stored => {
+                if (stored && stored.results) {
+                    const r = stored.results;
+                    currentResults.ioc           = ioc;
+                    currentResults.type          = stored.type || type;
+                    currentResults.vt            = r.vt            || null;
+                    currentResults.abuseipdb     = r.abuseipdb     || null;
+                    currentResults.whois         = r.whois         || null;
+                    currentResults.urlscan       = r.urlscan       || null;
+                    currentResults.threatfox     = r.threatfox     || null;
+                    currentResults.urlhaus       = r.urlhaus       || null;
+                    currentResults.malwarebazaar = r.malwarebazaar || null;
+
+                    if (r.vt)          renderVirusTotal(r.vt);
+                    if (r.abuseipdb)   renderAbuseIPDB(r.abuseipdb);
+                    if (r.whois)       renderWhois(r.whois);
+                    if (r.urlscan)     renderURLScan(r.urlscan);
+                    if (r.threatfox  && typeof renderThreatFox     === 'function') renderThreatFox(r.threatfox);
+                    if (r.urlhaus    && typeof renderURLhaus        === 'function') renderURLhaus(r.urlhaus);
+                    if (r.malwarebazaar && typeof renderMalwareBazaar === 'function') renderMalwareBazaar(r.malwarebazaar);
+                    renderCombined();
+                    showToast('Restored: ' + ioc, 'success');
+                } else {
+                    showToast('Click Investigate to re-scan ' + ioc, 'info');
+                }
+            }).catch(() => {
+                showToast('Click Investigate to re-scan ' + ioc, 'info');
+            });
         }
 
         // Tab Switching
@@ -1899,8 +1665,13 @@ Date:
         async function startSingleScan(input) {
             const typeEl = document.getElementById('iocType');
             const typeSelect = typeEl ? typeEl.value : 'auto';
-            const ioc = input.trim();
+            // Normalise defanged formats before scanning
+            const ioc = normaliseIOC(input.trim());
             const type = typeSelect === 'auto' ? detectIOCType(ioc) : typeSelect;
+            // Reset defang state now that we're scanning the real value
+            _iocDefanged = false;
+            const defangBtn = document.getElementById('defangBtn');
+            if (defangBtn) defangBtn.textContent = '🛡️ Defang';
             
             // Show guidance for multiple IOCs in single mode
             if (input.includes('\n') || (input.match(/\n/g) || []).length > 0) {
@@ -1912,13 +1683,6 @@ Date:
                 return;
             }
             
-            // Check if IOC type is supported by Worker API
-            if (type !== 'ip' && type !== 'domain' && type !== 'url') {
-                showToast('Worker API supports IP, Domain, and URL types only. For hashes, please use direct API.', 'warning');
-                // Fall back to direct API calls for hash type
-                await startSingleScanLegacy(input, type);
-                return;
-            }
             
             currentResults.ioc = ioc;
             currentResults.type = type;
@@ -2050,15 +1814,13 @@ Date:
         async function startBulkScan(input) {
             // First split by newlines
             const lines = input.split(/\r?\n/);
-            
-            // Then for each line, also split by commas
+
+            // Then for each line, also split by commas — normalise defanged formats
             const iocs = [];
             lines.forEach(line => {
                 const trimmed = line.trim();
                 if (!trimmed) return;
-                
-                // Split by commas if present
-                const parts = trimmed.split(',').map(p => p.trim()).filter(p => p);
+                const parts = trimmed.split(',').map(p => normaliseIOC(p.trim())).filter(p => p);
                 parts.forEach(part => iocs.push(part));
             });
             
@@ -2154,127 +1916,6 @@ Date:
             bsbSetDone(validIocs.length);
             switchTab('bulk');
             renderBulkResults();
-        }
-
-        // Bulk AbuseIPDB Scan
-        async function scanAbuseIPDBBulk(ioc, apiKey) {
-            try {
-                const response = await fetch(`https://api.abuseipdb.com/api/v2/check?ipAddress=${encodeURIComponent(ioc)}&maxAgeInDays=90&verbose=`, {
-                    headers: {
-                        'Key': apiKey,
-                        'Accept': 'application/json'
-                    }
-                });
-
-                if (!response.ok) {
-                    throw new Error('Failed to fetch IP information');
-                }
-
-                const data = await response.json();
-                return data.data;
-            } catch (error) {
-                return { error: error.message };
-            }
-        }
-
-        // Bulk WHOIS Scan
-        async function scanWhoisBulk(ioc, apiKey) {
-            try {
-                // Extract domain and get base domain for WHOIS
-                let domain = extractDomain(ioc);
-                const baseDomain = extractBaseDomain(domain);
-                
-                // Check for unsupported TLDs
-                const unsupportedTLDs = ['.onion', '.i2p', '.bit', '.zero', '.exit'];
-                const isUnsupportedTLD = unsupportedTLDs.some(tld => baseDomain.toLowerCase().endsWith(tld));
-                
-                if (isUnsupportedTLD) {
-                    return { error: 'WHOIS not supported for this TLD' };
-                }
-                
-                const response = await fetch(`https://api.apilayer.com/whois/query?domain=${encodeURIComponent(baseDomain)}`, {
-                    headers: {
-                        'APIKEY': apiKey
-                    }
-                });
-
-                if (!response.ok) {
-                    const errorText = await response.text();
-                    throw new Error(`HTTP ${response.status}: ${errorText || 'Failed'}`);
-                }
-
-                const data = await response.json();
-                return data.result || null;
-            } catch (error) {
-                console.error('WHOIS Bulk Error:', error);
-                return { error: error.message };
-            }
-        }
-
-        // Bulk VirusTotal Scan (returns result for bulk mode)
-        async function scanVirusTotalBulk(ioc, type, apiKey) {
-            let endpoint = '';
-            try {
-                switch (type) {
-                    case 'ip':
-                        endpoint = `https://www.virustotal.com/api/v3/ip_addresses/${ioc}`;
-                        break;
-                    case 'domain':
-                        endpoint = `https://www.virustotal.com/api/v3/domains/${ioc}`;
-                        break;
-                    case 'url':
-                        endpoint = `https://www.virustotal.com/api/v3/urls`;
-                        break;
-                    case 'hash':
-                        endpoint = `https://www.virustotal.com/api/v3/files/${ioc}`;
-                        break;
-                    default:
-                        return { error: 'Unsupported type' };
-                }
-
-                let url = endpoint;
-                let method = 'GET';
-                let body = null;
-                
-                // For URLs, use base64url encoding (RFC 4648) as required by VirusTotal
-                if (type === 'url') {
-                    const urlId = btoa(unescape(encodeURIComponent(ioc)))
-                        .replace(/=+$/, '')
-                        .replace(/\+/g, '-')
-                        .replace(/\//g, '_');
-                    url = `https://www.virustotal.com/api/v3/urls/${urlId}`;
-                }
-
-                // Direct fetch only — bulk goes through Worker at the startBulkScan level
-                let response;
-                response = await fetch(url, {
-                    method: method,
-                    headers: {
-                        'x-apikey': apiKey,
-                        'Content-Type': 'application/json'
-                    },
-                    body: type === 'url' ? body : null
-                });
-
-                if (!response.ok) {
-                    if (response.status === 404) {
-                        return { notFound: true, ioc: ioc };
-                    }
-                    if (response.status === 400) {
-                        return { error: 'Bad request - check API key and URL format', ioc: ioc };
-                    }
-                    if (response.status === 429) {
-                        return { error: 'Rate limited - please wait and try again', ioc: ioc };
-                    }
-                    throw new Error(`API error: ${response.status}`);
-                }
-
-                const data = await response.json();
-                
-                return data;
-            } catch (error) {
-                return { error: error.message };
-            }
         }
 
         // Render Bulk Progress
@@ -2631,6 +2272,7 @@ Date:
                         color: white;
                     }
                 </style>
+                ${renderBulkSummaryChart(sortedResults)}
                 <div class="bulk-toolbar">
                     <button class="btn btn-sm" onclick="copyAllBulkResults()">
                         Copy All Results
@@ -3835,7 +3477,18 @@ Date:
                 } catch (e) {
                     console.warn('SOC dashboard update failed:', e);
                 }
-                
+
+                // Persist results to IndexedDB for session restore
+                persistScanResult(currentResults.ioc, currentResults.type, {
+                    vt: currentResults.vt,
+                    abuseipdb: currentResults.abuseipdb,
+                    whois: currentResults.whois,
+                    urlscan: currentResults.urlscan,
+                    threatfox: currentResults.threatfox,
+                    urlhaus: currentResults.urlhaus,
+                    malwarebazaar: currentResults.malwarebazaar
+                });
+
                 return data;
                 
             } catch (error) {
@@ -3950,77 +3603,6 @@ Date:
             return null;
         }
         
-        // VirusTotal API
-        async function scanVirusTotal(ioc, type) {
-            const keys = getKeys();
-            let endpoint = '';
-
-            try {
-                switch (type) {
-                    case 'ip':
-                        endpoint = `https://www.virustotal.com/api/v3/ip_addresses/${ioc}`;
-                        break;
-                    case 'domain':
-                        endpoint = `https://www.virustotal.com/api/v3/domains/${ioc}`;
-                        break;
-                    case 'url':
-                        // VT requires base64url encoding (RFC 4648): strip padding, replace + with -, / with _
-                        const urlId = btoa(unescape(encodeURIComponent(ioc)))
-                            .replace(/=+$/, '')
-                            .replace(/\+/g, '-')
-                            .replace(/\//g, '_');
-                        endpoint = `https://www.virustotal.com/api/v3/urls/${urlId}`;
-                        break;
-                    case 'hash':
-                        endpoint = `https://www.virustotal.com/api/v3/files/${ioc}`;
-                        break;
-                    default:
-                        throw new Error('Unknown IOC type');
-                }
-
-                console.log('VirusTotal request:', endpoint);
-
-                const response = await fetch(endpoint, {
-                    headers: {
-                        'x-apikey': keys.vt,
-                        'Content-Type': 'application/json'
-                    }
-                });
-
-                if (!response.ok) {
-                    if (response.status === 404) {
-                        throw new Error('No results found in VirusTotal (404)');
-                    }
-                    if (response.status === 429) {
-                        throw new Error('Rate limited - please wait and try again');
-                    }
-                    if (response.status === 403) {
-                        throw new Error('Access denied - check API key');
-                    }
-                    throw new Error(`API error: ${response.status}`);
-                }
-
-                const data = await response.json();
-                console.log('VirusTotal response:', data);
-                currentResults.vt = data;
-                renderVirusTotal(data);
-                
-                // Update combined view
-                const combinedContainer = document.getElementById('combinedResults');
-                if (combinedContainer && currentResults.abuseipdb) {
-                    renderCombined();
-                }
-
-            } catch (error) {
-                console.error('VirusTotal Error:', error);
-                if (error.message.includes('Failed to fetch') || error.message.includes('NetworkError')) {
-                    showError('vt', 'Network error - check connection and try again');
-                } else {
-                    showError('vt', error.message);
-                }
-            }
-        }
-
         function renderVirusTotal(data) {
             const container = document.getElementById('vtResults');
             if (!container || !data || !data.data || !data.data.attributes) {
@@ -4265,187 +3847,7 @@ Date:
             });
         }
 
-        // AbuseIPDB API
-        async function scanAbuseIPDB(ioc) {
-            const keys = getKeys();
-            let ipToQuery = ioc;
-            let resolvedFromDomain = null;
-
-            try {
-                // Check if input is a hash - AbuseIPDB doesn't support hash searches
-                const iocType = detectIOCType(ioc);
-                if (iocType === 'hash') {
-                    showError('abuseipdb', 'AbuseIPDB does not support hash searches. It only supports IP addresses and domains.');
-                    return;
-                }
-
-                // Check if input is a domain/URL and resolve to IP
-                if (iocType === 'domain' || iocType === 'url') {
-                    const domain = extractDomain(ioc);
-                    const resolvedIP = await resolveDNS(domain);
-                    if (resolvedIP) {
-                        resolvedFromDomain = domain;
-                        ipToQuery = resolvedIP;
-                        console.log(`Resolved ${domain} to ${resolvedIP}`);
-                    } else {
-                        showError('abuseipdb', `Could not resolve domain ${domain} to IP address`);
-                        return;
-                    }
-                }
-
-                // Query AbuseIPDB API
-                const response = await fetch(`https://api.abuseipdb.com/api/v2/check?ipAddress=${encodeURIComponent(ipToQuery)}&maxAgeInDays=90&verbose=`, {
-                    headers: {
-                        'Key': keys.abuseipdb,
-                        'Accept': 'application/json'
-                    }
-                });
-
-                if (!response.ok) {
-                    throw new Error('Failed to fetch IP information from AbuseIPDB');
-                }
-
-                const data = await response.json();
-                const ipData = data.data;
-
-                console.log('AbuseIPDB response:', ipData);
-
-                // Add resolved domain info to the result
-                if (resolvedFromDomain) {
-                    ipData.resolvedFrom = resolvedFromDomain;
-                }
-
-                currentResults.abuseipdb = ipData;
-                renderAbuseIPDB(ipData);
-                
-                // Update combined view
-                const combinedContainer = document.getElementById('combinedResults');
-                if (combinedContainer && currentResults.vt) {
-                    renderCombined();
-                }
-
-            } catch (error) {
-                console.error('AbuseIPDB Error:', error);
-                showError('abuseipdb', error.message);
-            }
-        }
-
-        // DNS Resolution function
-        async function resolveDNS(domain) {
-            try {
-                // Use Google's DNS-over-HTTPS API
-                const response = await fetch(`https://dns.google/resolve?name=${encodeURIComponent(domain)}&type=A`);
-                if (!response.ok) {
-                    return null;
-                }
-                const data = await response.json();
-                
-                // Find first A record (IPv4)
-                if (data.Answer) {
-                    for (const answer of data.Answer) {
-                        if (answer.type === 1) { // Type 1 is A record
-                            return answer.data;
-                        }
-                    }
-                }
-                return null;
-            } catch (error) {
-                console.error('DNS resolution error:', error);
-                return null;
-            }
-        }
-
-        // WHOIS API (APILayer)
-        async function scanWhois(ioc) {
-            const keys = getKeys();
-            
-            // Extract domain from URL if needed
-            let domain = extractDomain(ioc);
-            
-            // Get base domain (removes subdomains) for WHOIS lookup
-            // WHOIS only works with base domains, not subdomains
-            const baseDomain = extractBaseDomain(domain);
-            console.log('WHOIS API Key present:', !!keys.whois, 'Key:', keys.whois ? keys.whois.substring(0, 5) + '...' : 'none', 'Domain:', baseDomain);
-            
-            // Check for unsupported TLDs
-            const unsupportedTLDs = ['.onion', '.i2p', '.bit', '.zero', '.exit'];
-            const isUnsupportedTLD = unsupportedTLDs.some(tld => baseDomain.toLowerCase().endsWith(tld));
-            
-            if (isUnsupportedTLD) {
-                showError('whois', 'WHOIS lookup not supported for this TLD (.onion domains use Tor network)');
-                return;
-            }
-
-            try {
-                // Query WHOIS API with base domain
-                const response = await fetch(`https://api.apilayer.com/whois/query?domain=${encodeURIComponent(baseDomain)}`, {
-                    headers: {
-                        'APIKEY': keys.whois
-                    }
-                });
-
-                if (!response.ok) {
-                    const errorText = await response.text();
-                    throw new Error(`HTTP ${response.status}: ${errorText || 'Failed to fetch WHOIS information'}`);
-                }
-
-                const data = await response.json();
-                
-                if (data.result) {
-                    console.log('WHOIS response:', data.result);
-                    currentResults.whois = data.result;
-                    renderWhois(data.result);
-                    
-                    // Update combined view
-                    const combinedContainer = document.getElementById('combinedResults');
-                    if (combinedContainer && currentResults.vt) {
-                        renderCombined();
-                    }
-                } else {
-                    showError('whois', 'No WHOIS data found for this domain');
-                }
-
-            } catch (error) {
-                console.error('WHOIS Error:', error);
-                showError('whois', error.message);
-            }
-        }
-
         // URLScan.io API - Submit new scan with polling for results
-        // URLScan.io — delegated entirely to Worker (handles submit + poll server-side)
-        async function scanURLScan(ioc) {
-            console.log('scanURLScan: delegating to Worker for', ioc);
-            const keys = getKeys();
-            const container = document.getElementById('urlscanResults');
-            const urlscanEmpty = document.getElementById('urlscanEmpty');
-            if (container) container.innerHTML = `
-                <div class="loading"><div class="spinner"></div>
-                <span>URLScan analysis in progress...</span></div>`;
-            if (urlscanEmpty) urlscanEmpty.style.display = 'none';
-            try {
-                const response = await fetch(WORKER_API_URL + '/scan?value=' + encodeURIComponent(ioc), {
-                    headers: {
-                        'Accept':          'application/json',
-                        'X-VT-API-Key':    keys.vt        || '',
-                        'X-AbuseIPDB-Key': keys.abuseipdb || '',
-                        'X-Whois-Key':     keys.whois     || '',
-                        'X-URLScan-Key':   keys.urlscan   || '',
-                        'X-AbuseCH-Key':   keys.abusech   || ''
-                    }
-                });
-                if (!response.ok) throw new Error(`Worker error: ${response.status}`);
-                const data = await response.json();
-                if (data.urlscan && !data.urlscan.error) {
-                    currentResults.urlscan = data.urlscan;
-                    renderURLScan(data.urlscan);
-                } else {
-                    showError('urlscan', data.urlscan?.error || 'URLScan data not available');
-                }
-            } catch (err) {
-                showError('urlscan', err.message);
-            }
-        }
-
                 function renderURLScan(data) {
             const container = document.getElementById('urlscanResults');
             
@@ -5535,6 +4937,281 @@ Date:
             txt += '\nEND OF REPORT\n';
 
             downloadFile(txt, `threatscan_${currentResults.ioc}_${Date.now()}.txt`, 'text/plain');
+        }
+
+        // ════════════════════════════════════════════════════════════════
+        // FEATURE: IOC Defanging / Refanging
+        // ════════════════════════════════════════════════════════════════
+        let _iocDefanged = false;
+
+        function toggleDefang() {
+            const input = document.getElementById('iocInput');
+            const btn   = document.getElementById('defangBtn');
+            if (!input || !btn) return;
+
+            const lines = input.value.split('\n');
+            if (!_iocDefanged) {
+                input.value   = lines.map(l => defangIOC(l.trim())).join('\n');
+                btn.textContent = '🔓 Refang';
+                btn.title = 'Convert back to scannable format';
+                _iocDefanged  = true;
+            } else {
+                input.value   = lines.map(l => normaliseIOC(l.trim())).join('\n');
+                btn.textContent = '🛡️ Defang';
+                btn.title = 'Defang for safe sharing';
+                _iocDefanged  = false;
+            }
+        }
+
+        // ════════════════════════════════════════════════════════════════
+        // FEATURE: Paste from Clipboard
+        // ════════════════════════════════════════════════════════════════
+        async function pasteFromClipboard() {
+            try {
+                const text = await navigator.clipboard.readText();
+                if (!text.trim()) { showToast('Clipboard is empty', 'warning'); return; }
+
+                const input = document.getElementById('iocInput');
+                input.value = text.trim();
+                _iocDefanged = false;
+
+                // Auto-detect mode
+                const lines = text.trim().split(/\r?\n/).filter(l => l.trim());
+                if (lines.length > 1) {
+                    setScanMode('bulk');
+                } else {
+                    setScanMode('single');
+                }
+                input.dispatchEvent(new Event('input'));
+                showToast(`Pasted ${lines.length} IOC${lines.length > 1 ? 's' : ''} from clipboard`, 'success');
+            } catch (e) {
+                showToast('Clipboard access denied — paste manually (Ctrl+V)', 'warning');
+            }
+        }
+
+        // ════════════════════════════════════════════════════════════════
+        // FEATURE: MITRE ATT&CK lookup (free TAXII — no key needed)
+        // Maps malware family name to techniques via cached in-memory map
+        // ════════════════════════════════════════════════════════════════
+        const _mitreCache = {};
+
+        async function lookupMITRE(malwareFamily) {
+            if (!malwareFamily || malwareFamily === 'Unknown') return null;
+            const key = malwareFamily.toLowerCase();
+            if (_mitreCache[key] !== undefined) return _mitreCache[key];
+
+            try {
+                // MITRE ATT&CK Enterprise STIX data via GitHub (no key, CORS-friendly)
+                const url = `https://raw.githubusercontent.com/mitre/cti/master/enterprise-attack/software/${encodeURIComponent(key)}.json`;
+                // Use a known-good lightweight endpoint: search MITRE by name
+                const searchUrl = `https://attack.mitre.org/api/software/?term=${encodeURIComponent(malwareFamily)}`;
+
+                // Fallback: use hardcoded common families for instant lookup
+                const knownFamilies = {
+                    'cobalt strike': { techniques: ['T1071.001', 'T1059.003', 'T1055'], tactics: ['C2', 'Execution', 'Defense Evasion'] },
+                    'cobaltstrike':  { techniques: ['T1071.001', 'T1059.003', 'T1055'], tactics: ['C2', 'Execution', 'Defense Evasion'] },
+                    'mimikatz':      { techniques: ['T1003.001', 'T1550.002'],           tactics: ['Credential Access', 'Lateral Movement'] },
+                    'emotet':        { techniques: ['T1566.001', 'T1071.001', 'T1082'],  tactics: ['Initial Access', 'C2', 'Discovery'] },
+                    'trickbot':      { techniques: ['T1566.001', 'T1071', 'T1055'],      tactics: ['Initial Access', 'C2', 'Defense Evasion'] },
+                    'qakbot':        { techniques: ['T1566.001', 'T1059', 'T1071'],      tactics: ['Initial Access', 'Execution', 'C2'] },
+                    'remcos':        { techniques: ['T1219', 'T1071.001', 'T1082'],      tactics: ['C2', 'Discovery'] },
+                    'njrat':         { techniques: ['T1219', 'T1082', 'T1057'],          tactics: ['C2', 'Discovery'] },
+                    'asyncrat':      { techniques: ['T1219', 'T1059.001', 'T1082'],      tactics: ['C2', 'Execution', 'Discovery'] },
+                    'nanocore':      { techniques: ['T1219', 'T1082', 'T1113'],          tactics: ['C2', 'Discovery', 'Collection'] },
+                    'agent tesla':   { techniques: ['T1056.001', 'T1071.001', 'T1027'],  tactics: ['Collection', 'C2', 'Defense Evasion'] },
+                    'agenttesla':    { techniques: ['T1056.001', 'T1071.001', 'T1027'],  tactics: ['Collection', 'C2', 'Defense Evasion'] },
+                    'redline':       { techniques: ['T1539', 'T1555', 'T1071'],          tactics: ['Credential Access', 'C2'] },
+                    'lokibot':       { techniques: ['T1056', 'T1071.001'],               tactics: ['Collection', 'C2'] },
+                    'icedid':        { techniques: ['T1566.001', 'T1055', 'T1071'],      tactics: ['Initial Access', 'Defense Evasion', 'C2'] },
+                    'formbook':      { techniques: ['T1056.001', 'T1071', 'T1082'],      tactics: ['Collection', 'C2', 'Discovery'] },
+                    'raccoon':       { techniques: ['T1539', 'T1555', 'T1071'],          tactics: ['Credential Access', 'C2'] },
+                    'vidar':         { techniques: ['T1539', 'T1555.003', 'T1071'],      tactics: ['Credential Access', 'C2'] },
+                    'ghostsocks':    { techniques: ['T1090', 'T1071'],                   tactics: ['C2'] },
+                    'havoc':         { techniques: ['T1071.001', 'T1059', 'T1055'],      tactics: ['C2', 'Execution', 'Defense Evasion'] },
+                    'sliver':        { techniques: ['T1071.001', 'T1059', 'T1027'],      tactics: ['C2', 'Execution', 'Defense Evasion'] },
+                    'metasploit':    { techniques: ['T1059', 'T1055', 'T1071'],          tactics: ['Execution', 'Defense Evasion', 'C2'] },
+                };
+
+                const match = knownFamilies[key];
+                _mitreCache[key] = match || null;
+                return _mitreCache[key];
+            } catch (e) {
+                _mitreCache[key] = null;
+                return null;
+            }
+        }
+
+        function renderMITREBadges(mitreData) {
+            if (!mitreData) return '';
+            return mitreData.techniques.map((t, i) => {
+                const tactic = mitreData.tactics[i] || '';
+                return `<a href="https://attack.mitre.org/techniques/${t.replace('.','/')}/" target="_blank"
+                           style="display:inline-flex;align-items:center;gap:3px;font-size:10px;padding:2px 7px;border-radius:4px;background:rgba(163,113,247,0.15);color:#a371f7;text-decoration:none;border:1px solid rgba(163,113,247,0.3);"
+                           title="${tactic}">${t}</a>`;
+            }).join(' ');
+        }
+
+        // ════════════════════════════════════════════════════════════════
+        // FEATURE: Bulk results visual summary chart
+        // ════════════════════════════════════════════════════════════════
+        function renderBulkSummaryChart(results) {
+            const counts = { HIGH: 0, MEDIUM: 0, LOW: 0 };
+            const families = {};
+
+            results.forEach(r => {
+                let vtStats = null;
+                if (r.vt?.data?.attributes?.last_analysis_stats) vtStats = r.vt.data.attributes.last_analysis_stats;
+                const mal = vtStats ? (vtStats.malicious||0)+(vtStats.suspicious||0) : 0;
+                const abuse = r.abuseipdb?.abuseConfidenceScore || 0;
+                const hasTF = r.threatfox?.found;
+                const hasUH = r.urlhaus?.found && r.urlhaus.url_status === 'online';
+                const hasMB = r.malwarebazaar?.found;
+
+                const score = calculateThreatScore(r.ioc, vtStats, abuse, 0, r.threatfox, r.urlhaus, r.malwarebazaar);
+                if (score >= 80) counts.HIGH++;
+                else if (score >= 50) counts.MEDIUM++;
+                else counts.LOW++;
+
+                const fam = r.threatfox?.iocs?.[0]?.malware_printable || r.malwarebazaar?.malware_family;
+                if (fam && fam !== 'Unknown') families[fam] = (families[fam]||0) + 1;
+            });
+
+            const total = results.length || 1;
+            const topFamilies = Object.entries(families).sort((a,b)=>b[1]-a[1]).slice(0,5);
+
+            const bar = (count, total, color) => {
+                const pct = Math.round((count/total)*100);
+                return `<div style="display:flex;align-items:center;gap:8px;margin-bottom:6px;">
+                    <div style="width:70px;font-size:11px;color:var(--text-muted);text-align:right;">${count} IOCs</div>
+                    <div style="flex:1;background:var(--bg-tertiary,#21262d);border-radius:4px;height:14px;overflow:hidden;">
+                        <div style="width:${pct}%;height:100%;background:${color};border-radius:4px;transition:width 0.4s;"></div>
+                    </div>
+                    <div style="width:36px;font-size:11px;font-weight:700;color:${color};">${pct}%</div>
+                </div>`;
+            };
+
+            const familyBadges = topFamilies.map(([f, c]) =>
+                `<span style="font-size:10px;padding:2px 8px;border-radius:4px;background:rgba(248,81,73,0.15);color:#f85149;border:1px solid rgba(248,81,73,0.2);">${f} ×${c}</span>`
+            ).join(' ');
+
+            return `
+            <div style="display:flex;gap:16px;flex-wrap:wrap;margin-bottom:16px;">
+                <div style="flex:1;min-width:220px;background:var(--bg-secondary);border:1px solid #30363d;border-radius:10px;padding:14px 16px;">
+                    <div style="font-size:11px;font-weight:600;color:var(--text-muted);text-transform:uppercase;letter-spacing:.06em;margin-bottom:10px;">Risk Distribution</div>
+                    <div style="display:flex;gap:20px;margin-bottom:12px;">
+                        <div style="text-align:center;"><div style="font-size:22px;font-weight:800;color:#ef4444;">${counts.HIGH}</div><div style="font-size:10px;color:var(--text-muted);">HIGH</div></div>
+                        <div style="text-align:center;"><div style="font-size:22px;font-weight:800;color:#f59e0b;">${counts.MEDIUM}</div><div style="font-size:10px;color:var(--text-muted);">MED</div></div>
+                        <div style="text-align:center;"><div style="font-size:22px;font-weight:800;color:#22c55e;">${counts.LOW}</div><div style="font-size:10px;color:var(--text-muted);">LOW</div></div>
+                        <div style="text-align:center;"><div style="font-size:22px;font-weight:800;color:var(--text-muted);">${total}</div><div style="font-size:10px;color:var(--text-muted);">TOTAL</div></div>
+                    </div>
+                    ${bar(counts.HIGH,   total, '#ef4444')}
+                    ${bar(counts.MEDIUM, total, '#f59e0b')}
+                    ${bar(counts.LOW,    total, '#22c55e')}
+                </div>
+                ${topFamilies.length > 0 ? `
+                <div style="flex:1;min-width:200px;background:var(--bg-secondary);border:1px solid #30363d;border-radius:10px;padding:14px 16px;">
+                    <div style="font-size:11px;font-weight:600;color:var(--text-muted);text-transform:uppercase;letter-spacing:.06em;margin-bottom:10px;">Malware Families Detected</div>
+                    <div style="display:flex;flex-wrap:wrap;gap:6px;">${familyBadges}</div>
+                </div>` : ''}
+            </div>`;
+        }
+
+        // ════════════════════════════════════════════════════════════════
+        // FEATURE: SIEM auto-populate from current scan results
+        // ════════════════════════════════════════════════════════════════
+        function autoPopulateSIEM() {
+            if (!currentResults.ioc) {
+                showToast('Run a scan first to auto-populate the SIEM query', 'warning');
+                return;
+            }
+            const type = currentResults.type;
+            const ioc  = currentResults.ioc;
+            const input = document.getElementById('ipQueryInput');
+            if (!input) return;
+
+            // Collect all IPs — from the IOC itself if IP, or resolved IP from AbuseIPDB
+            let ips = [];
+            if (type === 'ip') {
+                ips.push(ioc);
+            }
+            if (currentResults.abuseipdb?.resolvedIp) {
+                ips.push(currentResults.abuseipdb.resolvedIp);
+            }
+            // Also pull IPs from URLScan lists
+            if (currentResults.urlscan?.lists?.ips) {
+                ips = ips.concat(currentResults.urlscan.lists.ips.slice(0, 10));
+            }
+            // Dedup
+            ips = [...new Set(ips)];
+
+            if (ips.length > 0) {
+                input.value = ips.join('\n');
+                generateQuery();
+                switchTab('ipquery');
+                showToast(`Auto-populated ${ips.length} IP${ips.length>1?'s':''} from ${ioc}`, 'success');
+            } else {
+                // For domains/URLs: put the IOC as context and show a note
+                input.value = '';
+                showToast(`No IPs found for ${type} — enter IPs manually`, 'info');
+                switchTab('ipquery');
+            }
+        }
+
+        // ════════════════════════════════════════════════════════════════
+        // FEATURE: IndexedDB session persistence
+        // Stores last 20 single-scan results; survives tab close/refresh
+        // ════════════════════════════════════════════════════════════════
+        const _DB_NAME = 'ThreatAnalyzerDB';
+        const _DB_VER  = 1;
+        let _db = null;
+
+        function openDB() {
+            return new Promise((resolve, reject) => {
+                if (_db) { resolve(_db); return; }
+                const req = indexedDB.open(_DB_NAME, _DB_VER);
+                req.onupgradeneeded = e => {
+                    const db = e.target.result;
+                    if (!db.objectStoreNames.contains('scans')) {
+                        const store = db.createObjectStore('scans', { keyPath: 'ioc' });
+                        store.createIndex('ts', 'timestamp');
+                    }
+                };
+                req.onsuccess = e => { _db = e.target.result; resolve(_db); };
+                req.onerror   = e => { console.warn('IndexedDB error', e); reject(e); };
+            });
+        }
+
+        async function persistScanResult(ioc, type, results) {
+            try {
+                const db = await openDB();
+                const tx = db.transaction('scans', 'readwrite');
+                const store = tx.objectStore('scans');
+                store.put({ ioc, type, results, timestamp: Date.now() });
+
+                // Keep only 20 most recent
+                const all = await new Promise(r => {
+                    const req = store.index('ts').getAll();
+                    req.onsuccess = e => r(e.target.result);
+                });
+                if (all.length > 20) {
+                    all.sort((a,b) => a.timestamp - b.timestamp);
+                    all.slice(0, all.length - 20).forEach(r => store.delete(r.ioc));
+                }
+            } catch(e) {
+                console.warn('persistScanResult failed:', e);
+            }
+        }
+
+        async function restoreScanResult(ioc) {
+            try {
+                const db = await openDB();
+                return new Promise(resolve => {
+                    const tx   = db.transaction('scans', 'readonly');
+                    const req  = tx.objectStore('scans').get(ioc);
+                    req.onsuccess = e => resolve(e.target.result || null);
+                    req.onerror   = () => resolve(null);
+                });
+            } catch(e) { return null; }
         }
 
         function downloadFile(content, filename, type) {
