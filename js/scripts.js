@@ -136,9 +136,26 @@
             // Auto-detect IOC type
             document.getElementById('iocInput').addEventListener('input', (e) => {
                 const value = e.target.value.trim();
-                if (value && document.getElementById('iocType').value === 'auto') {
-                    const type = detectIOCType(value);
-                    // Don't auto-select, just for reference
+                if (!value) return;
+                const lines = value.split(/\r?\n/).map(l => l.trim()).filter(l => l.length > 0);
+                if (lines.length > 1 && scanMode !== 'bulk') {
+                    scanMode = 'bulk';
+                    document.querySelectorAll('.mode-btn').forEach(btn => {
+                        btn.classList.toggle('active', btn.dataset.mode === 'bulk');
+                    });
+                    const hint = document.querySelector('.bulk-hint');
+                    if (hint) hint.style.display = 'block';
+                    bsbSetIdle();
+                    e.target.placeholder = 'Enter one IOC per line\n8.8.8.8\n1.1.1.1\nmalicious.com';
+                } else if (lines.length === 1 && scanMode !== 'single') {
+                    scanMode = 'single';
+                    document.querySelectorAll('.mode-btn').forEach(btn => {
+                        btn.classList.toggle('active', btn.dataset.mode === 'single');
+                    });
+                    const hint = document.querySelector('.bulk-hint');
+                    if (hint) hint.style.display = 'none';
+                    bsbHide();
+                    e.target.placeholder = 'Enter URL, IP, Domain, or Hash (MD5/SHA1/SHA256)';
                 }
             });
         });
@@ -365,26 +382,21 @@
             scanMode = mode;
             document.querySelectorAll('.mode-btn').forEach(btn => {
                 btn.classList.remove('active');
-                if (btn.dataset.mode === mode) {
-                    btn.classList.add('active');
-                }
+                if (btn.dataset.mode === mode) btn.classList.add('active');
             });
-            
+
             const hint = document.querySelector('.bulk-hint');
             const input = document.getElementById('iocInput');
-            const bulkTabBtn = document.querySelector('.bulk-tab');
-            
+
             if (mode === 'bulk') {
-                hint.style.display = 'block';
+                if (hint) hint.style.display = 'block';
                 input.placeholder = 'Enter one IOC per line\n8.8.8.8\n1.1.1.1\nmalicious.com';
-                if (bulkTabBtn) bulkTabBtn.style.display = 'inline-flex';
-                // Switch to bulk tab when entering bulk mode
+                bsbSetIdle();
                 switchTab('bulk');
             } else {
-                hint.style.display = 'none';
+                if (hint) hint.style.display = 'none';
                 input.placeholder = 'Enter URL, IP, Domain, or Hash (MD5/SHA1/SHA256)';
-                if (bulkTabBtn) bulkTabBtn.style.display = 'none';
-                // Switch back to vt tab when leaving bulk mode
+                bsbHide();
                 switchTab('vt');
             }
         }
@@ -394,67 +406,62 @@
 
         // API Key Management
         function loadKeys() {
-            const vtKey = localStorage.getItem('vt_api_key');
-            const abuseipdbKey = localStorage.getItem('abuseipdb_api_key');
-            const whoisKey = localStorage.getItem('whois_api_key');
-            const urlscanKey = localStorage.getItem('urlscan_api_key');
-            
-            const vtEl = document.getElementById('vtApiKey');
-            const abuseEl = document.getElementById('abuseipdbApiKey');
-            const whoisEl = document.getElementById('whoisApiKey');
+            const vtKey       = localStorage.getItem('vt_api_key');
+            const abuseipdbKey= localStorage.getItem('abuseipdb_api_key');
+            const whoisKey    = localStorage.getItem('whois_api_key');
+            const urlscanKey  = localStorage.getItem('urlscan_api_key');
+            const abusechKey  = localStorage.getItem('abusech_api_key');
+
+            const vtEl      = document.getElementById('vtApiKey');
+            const abuseEl   = document.getElementById('abuseipdbApiKey');
+            const whoisEl   = document.getElementById('whoisApiKey');
             const urlscanEl = document.getElementById('urlscanApiKey');
-            
-            if (vtEl && vtKey) vtEl.value = atob(vtKey);
-            if (abuseEl && abuseipdbKey) abuseEl.value = atob(abuseipdbKey);
-            if (whoisEl && whoisKey) whoisEl.value = atob(whoisKey);
-            if (urlscanEl && urlscanKey) urlscanEl.value = atob(urlscanKey);
+            const abusechEl = document.getElementById('abusechApiKey');
+
+            if (vtEl      && vtKey)       vtEl.value      = atob(vtKey);
+            if (abuseEl   && abuseipdbKey) abuseEl.value  = atob(abuseipdbKey);
+            if (whoisEl   && whoisKey)    whoisEl.value   = atob(whoisKey);
+            if (urlscanEl && urlscanKey)  urlscanEl.value = atob(urlscanKey);
+            if (abusechEl && abusechKey)  abusechEl.value = atob(abusechKey);
         }
 
         function saveKeys() {
-            const vtEl = document.getElementById('vtApiKey');
-            const abuseEl = document.getElementById('abuseipdbApiKey');
-            const whoisEl = document.getElementById('whoisApiKey');
+            const vtEl      = document.getElementById('vtApiKey');
+            const abuseEl   = document.getElementById('abuseipdbApiKey');
+            const whoisEl   = document.getElementById('whoisApiKey');
             const urlscanEl = document.getElementById('urlscanApiKey');
-            
+            const abusechEl = document.getElementById('abusechApiKey');
+
             if (!vtEl || !abuseEl || !whoisEl || !urlscanEl) return;
-            
-            const vtKey = vtEl.value.trim();
-            const abuseipdbKey = abuseEl.value.trim();
-            const whoisKey = whoisEl.value.trim();
-            const urlscanKey = urlscanEl.value.trim();
-            
-            if (vtKey) localStorage.setItem('vt_api_key', btoa(vtKey));
-            else localStorage.removeItem('vt_api_key');
-            
+
+            const vtKey       = vtEl.value.trim();
+            const abuseipdbKey= abuseEl.value.trim();
+            const whoisKey    = whoisEl.value.trim();
+            const urlscanKey  = urlscanEl.value.trim();
+            const abusechKey  = abusechEl ? abusechEl.value.trim() : '';
+
+            if (vtKey)       localStorage.setItem('vt_api_key',       btoa(vtKey));
+            else             localStorage.removeItem('vt_api_key');
             if (abuseipdbKey) localStorage.setItem('abuseipdb_api_key', btoa(abuseipdbKey));
-            else localStorage.removeItem('abuseipdb_api_key');
-            
-            if (whoisKey) localStorage.setItem('whois_api_key', btoa(whoisKey));
-            else localStorage.removeItem('whois_api_key');
-            
-            if (urlscanKey) localStorage.setItem('urlscan_api_key', btoa(urlscanKey));
-            else localStorage.removeItem('urlscan_api_key');
-            
+            else              localStorage.removeItem('abuseipdb_api_key');
+            if (whoisKey)    localStorage.setItem('whois_api_key',    btoa(whoisKey));
+            else             localStorage.removeItem('whois_api_key');
+            if (urlscanKey)  localStorage.setItem('urlscan_api_key',  btoa(urlscanKey));
+            else             localStorage.removeItem('urlscan_api_key');
+            if (abusechKey)  localStorage.setItem('abusech_api_key',  btoa(abusechKey));
+            else             localStorage.removeItem('abusech_api_key');
+
             updateApiStatus();
             closeSettings();
         }
 
         function clearKeys() {
-            localStorage.removeItem('vt_api_key');
-            localStorage.removeItem('abuseipdb_api_key');
-            localStorage.removeItem('whois_api_key');
-            localStorage.removeItem('urlscan_api_key');
-            
-            const vtEl = document.getElementById('vtApiKey');
-            const abuseEl = document.getElementById('abuseipdbApiKey');
-            const whoisEl = document.getElementById('whoisApiKey');
-            const urlscanEl = document.getElementById('urlscanApiKey');
-            
-            if (vtEl) vtEl.value = '';
-            if (abuseEl) abuseEl.value = '';
-            if (whoisEl) whoisEl.value = '';
-            if (urlscanEl) urlscanEl.value = '';
-            
+            ['vt_api_key','abuseipdb_api_key','whois_api_key','urlscan_api_key','abusech_api_key']
+                .forEach(k => localStorage.removeItem(k));
+            ['vtApiKey','abuseipdbApiKey','whoisApiKey','urlscanApiKey','abusechApiKey'].forEach(id => {
+                const el = document.getElementById(id);
+                if (el) el.value = '';
+            });
             updateApiStatus();
         }
 
@@ -476,10 +483,11 @@
 
         function getKeys() {
             return {
-                vt: localStorage.getItem('vt_api_key') ? atob(localStorage.getItem('vt_api_key')) : '',
-                abuseipdb: localStorage.getItem('abuseipdb_api_key') ? atob(localStorage.getItem('abuseipdb_api_key')) : '',
-                whois: localStorage.getItem('whois_api_key') ? atob(localStorage.getItem('whois_api_key')) : '',
-                urlscan: localStorage.getItem('urlscan_api_key') ? atob(localStorage.getItem('urlscan_api_key')) : ''
+                vt:       localStorage.getItem('vt_api_key')        ? atob(localStorage.getItem('vt_api_key'))        : '',
+                abuseipdb:localStorage.getItem('abuseipdb_api_key') ? atob(localStorage.getItem('abuseipdb_api_key')) : '',
+                whois:    localStorage.getItem('whois_api_key')     ? atob(localStorage.getItem('whois_api_key'))     : '',
+                urlscan:  localStorage.getItem('urlscan_api_key')   ? atob(localStorage.getItem('urlscan_api_key'))   : '',
+                abusech:  localStorage.getItem('abusech_api_key')   ? atob(localStorage.getItem('abusech_api_key'))   : ''
             };
         }
 
@@ -489,6 +497,8 @@
             document.getElementById('abuseipdbStatus').classList.toggle('active', !!keys.abuseipdb);
             document.getElementById('whoisStatus').classList.toggle('active', !!keys.whois);
             document.getElementById('urlscanStatus').classList.toggle('active', !!keys.urlscan);
+            const abusechDot = document.getElementById('abusechStatus');
+            if (abusechDot) abusechDot.classList.toggle('active', !!keys.abusech);
         }
 
         // Modal
@@ -883,30 +893,23 @@ RECOMMENDATIONS
 
         // Tab Switching
         function switchTab(tab) {
-            // Handle bulk tab specially - show vt tab but keep bulk button active
+            document.querySelectorAll('.tab-btn').forEach(btn => btn.classList.remove('active'));
+            document.querySelectorAll('.tab-content').forEach(c => c.classList.remove('active'));
+
             if (tab === 'bulk') {
-                document.querySelectorAll('.tab-btn').forEach(btn => {
-                    btn.classList.remove('active');
-                    if (btn.dataset.tab === 'bulk') {
-                        btn.classList.add('active');
-                    }
-                });
-                document.querySelectorAll('.tab-content').forEach(content => {
-                    content.classList.remove('active');
-                });
-                document.getElementById('vtTab').classList.add('active');
+                const bulkContent = document.getElementById('bulkTab');
+                if (bulkContent) bulkContent.classList.add('active');
                 return;
             }
-            
+
             document.querySelectorAll('.tab-btn').forEach(btn => {
                 btn.classList.toggle('active', btn.dataset.tab === tab);
             });
             document.querySelectorAll('.tab-content').forEach(content => {
                 content.classList.toggle('active', content.id === tab + 'Tab');
             });
-            
+
             if (tab === 'combined') {
-                // Always re-render combined view when switching to it
                 renderCombined();
             }
         }
@@ -2075,10 +2078,10 @@ Date:
             // Initialize bulk results
             bulkResults = [];
             bulkScanProgress = 0;
-            updateBulkIocCount(0);
 
-            // Show bulk results tab
-            switchTab('vt');
+            // Show BSB in scanning state and navigate to bulk tab immediately
+            bsbSetScanning(0, validIocs.length, '');
+            switchTab('bulk');
             document.getElementById('exportBar').style.display = 'flex';
 
             // Render initial progress
@@ -2101,32 +2104,39 @@ Date:
                         method: 'GET',
                         headers: {
                             'Accept': 'application/json',
-                            'X-VT-API-Key': keys.vt || '',
+                            'X-VT-API-Key':    keys.vt        || '',
                             'X-AbuseIPDB-Key': keys.abuseipdb || '',
-                            'X-Whois-Key': keys.whois || '',
-                            'X-URLScan-Key': keys.urlscan || ''
+                            'X-Whois-Key':     keys.whois     || '',
+                            'X-URLScan-Key':   keys.urlscan   || '',
+                            'X-AbuseCH-Key':   keys.abusech   || ''
                         }
                     });
                     const data = await response.json();
                     
                     bulkResults.push({
-                        ioc: ioc,
-                        type: data.type || detectIOCType(ioc),
-                        vt: data.virustotal,
-                        abuseipdb: data.abuseipdb,
-                        whois: data.whois,
-                        urlscan: data.urlscan,
+                        ioc:          ioc,
+                        type:         data.type || detectIOCType(ioc),
+                        vt:           data.virustotal,
+                        abuseipdb:    data.abuseipdb,
+                        whois:        data.whois,
+                        urlscan:      data.urlscan,
+                        threatfox:    data.threatfox    || null,
+                        urlhaus:      data.urlhaus      || null,
+                        malwarebazaar:data.malwarebazaar|| null,
                         status: data.error ? 'error' : 'success'
                     });
                 } catch (error) {
                     console.error('Worker bulk scan error:', error);
                     bulkResults.push({
-                        ioc: ioc,
-                        type: detectIOCType(ioc),
-                        vt: { error: error.message },
-                        abuseipdb: null,
-                        whois: null,
-                        urlscan: null,
+                        ioc:          ioc,
+                        type:         detectIOCType(ioc),
+                        vt:           { error: error.message },
+                        abuseipdb:    null,
+                        whois:        null,
+                        urlscan:      null,
+                        threatfox:    null,
+                        urlhaus:      null,
+                        malwarebazaar:null,
                         status: 'error'
                     });
                 }
@@ -2134,20 +2144,22 @@ Date:
                 bulkScanProgress = i + 1;
                 renderBulkProgress(bulkScanProgress, validIocs.length);
                 
-                // Rate limiting: wait between requests to avoid blocking
+                // 500ms between IOCs — Worker parallelises all APIs internally
                 if (i < validIocs.length - 1) {
-                    await sleep(1500);
+                    await sleep(500);
                 }
             }
 
-            // Render final results
+            // Scan complete — flip BSB to done state
+            bsbSetDone(validIocs.length);
+            switchTab('bulk');
             renderBulkResults();
         }
 
         // Bulk AbuseIPDB Scan
         async function scanAbuseIPDBBulk(ioc, apiKey) {
             try {
-                const response = await fetch(CORS_PROXY + encodeURIComponent(`https://api.abuseipdb.com/api/v2/check?ipAddress=${encodeURIComponent(ioc)}&maxAgeInDays=90&verbose=`), {
+                const response = await fetch(`https://api.abuseipdb.com/api/v2/check?ipAddress=${encodeURIComponent(ioc)}&maxAgeInDays=90&verbose=`, {
                     headers: {
                         'Key': apiKey,
                         'Accept': 'application/json'
@@ -2233,29 +2245,16 @@ Date:
                     url = `https://www.virustotal.com/api/v3/urls/${urlId}`;
                 }
 
-                // Try direct API call first (like single scan), then fallback to proxy
+                // Direct fetch only — bulk goes through Worker at the startBulkScan level
                 let response;
-                try {
-                    response = await fetch(url, {
-                        method: method,
-                        headers: {
-                            'x-apikey': apiKey,
-                            'Content-Type': 'application/json'
-                        },
-                        body: type === 'url' ? body : null
-                    });
-                } catch (directError) {
-                    // If direct fails, try with CORS proxy
-                    const proxyUrl = CORS_PROXY + encodeURIComponent(url);
-                    response = await fetch(proxyUrl, {
-                        method: method,
-                        headers: {
-                            'x-apikey': apiKey,
-                            'Content-Type': 'application/json'
-                        },
-                        body: type === 'url' ? body : null
-                    });
-                }
+                response = await fetch(url, {
+                    method: method,
+                    headers: {
+                        'x-apikey': apiKey,
+                        'Content-Type': 'application/json'
+                    },
+                    body: type === 'url' ? body : null
+                });
 
                 if (!response.ok) {
                     if (response.status === 404) {
@@ -2280,22 +2279,49 @@ Date:
 
         // Render Bulk Progress
         function renderBulkProgress(current, total) {
-            const container = document.getElementById('vtResults');
-            const percentage = Math.round((current / total) * 100);
-            
+            const container = document.getElementById('bulkTab');
+            if (!container) return;
+            const percentage = total > 0 ? Math.round((current / total) * 100) : 0;
+            const done = current;
+            const remaining = total - current;
+            const currentIoc = (typeof bulkResults !== 'undefined' && bulkResults[current - 1])
+                ? bulkResults[current - 1].ioc : '';
+
+            // Drive the BSB with live progress
+            bsbSetScanning(done, total, currentIoc);
+
             container.innerHTML = `
-                <div class="bulk-progress">
-                    <h3>Scanning ${total} IOCs...</h3>
-                    <div class="progress-bar">
-                        <div class="progress-fill" style="width: ${percentage}%"></div>
+                <div style="padding:20px;">
+                    <div style="display:flex;align-items:center;gap:12px;background:var(--bg-secondary);border:1px solid #30363d;border-radius:12px;padding:20px 24px;margin-bottom:16px;">
+                        <div style="width:12px;height:12px;border-radius:50%;background:#58a6ff;flex-shrink:0;animation:bsbSonar2 1s ease-in-out infinite;"></div>
+                        <div style="flex:1;">
+                            <div style="font-size:15px;font-weight:600;color:var(--text-primary);">🔍 Scanning in progress…</div>
+                            <div style="font-size:12px;color:var(--text-muted);margin-top:3px;font-family:monospace;">
+                                ${currentIoc ? `Querying: <span style="color:#58a6ff;">${currentIoc}</span>` : `Preparing to scan ${total} IOCs…`}
+                            </div>
+                        </div>
+                        <div style="display:flex;gap:20px;flex-shrink:0;text-align:center;">
+                            <div><div style="font-size:22px;font-weight:800;color:#58a6ff;">${done}</div><div style="font-size:10px;color:var(--text-muted);text-transform:uppercase;letter-spacing:1px;">Done</div></div>
+                            <div><div style="font-size:22px;font-weight:800;color:#58a6ff;">${remaining}</div><div style="font-size:10px;color:var(--text-muted);text-transform:uppercase;letter-spacing:1px;">Left</div></div>
+                            <div><div style="font-size:22px;font-weight:800;color:#58a6ff;">${total}</div><div style="font-size:10px;color:var(--text-muted);text-transform:uppercase;letter-spacing:1px;">Total</div></div>
+                        </div>
                     </div>
-                    <div class="progress-stats">
-                        <span>Progress: ${current} / ${total}</span>
-                        <span>${percentage}% complete</span>
+                    <div style="background:var(--bg-secondary);border:1px solid #30363d;border-radius:10px;padding:16px 20px;">
+                        <div style="display:flex;justify-content:space-between;margin-bottom:8px;">
+                            <span style="font-size:13px;font-weight:600;color:var(--text-primary);">Progress</span>
+                            <span style="font-size:13px;font-weight:700;color:#58a6ff;">${percentage}%</span>
+                        </div>
+                        <div style="background:#21262d;border-radius:999px;height:8px;overflow:hidden;">
+                            <div style="width:${percentage}%;height:100%;background:linear-gradient(90deg,#1f6feb,#58a6ff);border-radius:999px;transition:width 0.4s ease;"></div>
+                        </div>
+                        <div style="display:flex;justify-content:space-between;margin-top:6px;font-size:11px;color:var(--text-muted);">
+                            <span>${done} of ${total} IOCs scanned</span>
+                            <span>${remaining > 0 ? `~${Math.ceil(remaining * 0.5)}s remaining` : 'Finishing…'}</span>
+                        </div>
                     </div>
                 </div>
+                <style>@keyframes bsbSonar2{0%,100%{opacity:1;transform:scale(1)}50%{opacity:0.5;transform:scale(1.3)}}</style>
             `;
-            document.getElementById('vtEmpty').style.display = 'none';
         }
 
         // Bulk Table Sorting State
@@ -2406,7 +2432,7 @@ Date:
 
         // Render Bulk Results
         function renderBulkResults() {
-            const container = document.getElementById('vtResults');
+            const container = document.getElementById('bulkTab');
             
             // Calculate stats
             let malicious = 0, suspicious = 0, clean = 0, undetected = 0, errors = 0;
@@ -2675,6 +2701,9 @@ Date:
                                     </select>
                                 </div>
                             </th>
+                            <th><div class="th-content">🦊 ThreatFox</div></th>
+                            <th><div class="th-content">🔴 URLhaus</div></th>
+                            <th><div class="th-content">☣️ Bazaar</div></th>
                             <th>
                                 <div class="th-content">
                                     Risk
@@ -2784,6 +2813,35 @@ Date:
                     pivotBtns = '<div class="pivot-btns"><a class="pivot-btn" href="https://www.virustotal.com/gui/url/' + encodeURIComponent(r.ioc) + '" target="_blank">VT</a></div>';
                 }
 
+                // ThreatFox cell
+                let tfText = '<span style="color:var(--text-muted);font-size:11px;">—</span>';
+                if (r.threatfox && r.threatfox.found && r.threatfox.iocs && r.threatfox.iocs.length > 0) {
+                    const tf = r.threatfox.iocs[0];
+                    const conf = tf.confidence_level || 0;
+                    const col = conf >= 75 ? '#f85149' : '#d29922';
+                    tfText = `<span style="color:${col};font-weight:700;font-size:11px;">${tf.malware_printable || tf.malware || 'Match'}</span><br><span style="color:var(--text-muted);font-size:10px;">${conf}% conf</span>`;
+                } else if (r.threatfox && !r.threatfox.error) {
+                    tfText = '<span style="color:#3fb950;font-size:11px;">✓ Clean</span>';
+                }
+
+                // URLhaus cell
+                let uhText = '<span style="color:var(--text-muted);font-size:11px;">—</span>';
+                if (r.urlhaus && r.urlhaus.found) {
+                    const online = r.urlhaus.url_status === 'online';
+                    const col = online ? '#f85149' : '#d29922';
+                    uhText = `<span style="color:${col};font-weight:700;font-size:11px;">${r.urlhaus.url_status || 'Listed'}</span><br><span style="color:var(--text-muted);font-size:10px;">${r.urlhaus.threat || ''}</span>`;
+                } else if (r.urlhaus && !r.urlhaus.error) {
+                    uhText = '<span style="color:#3fb950;font-size:11px;">✓ Clean</span>';
+                }
+
+                // MalwareBazaar cell
+                let mbText = '<span style="color:var(--text-muted);font-size:11px;">—</span>';
+                if (r.malwarebazaar && r.malwarebazaar.found) {
+                    mbText = `<span style="color:#f85149;font-weight:700;font-size:11px;">☣️ ${r.malwarebazaar.malware_family || 'Malware'}</span>`;
+                } else if (r.malwarebazaar && !r.malwarebazaar.error) {
+                    mbText = '<span style="color:#3fb950;font-size:11px;">✓ Clean</span>';
+                }
+
                 html += `
                     <tr class="${rowClass}">
                         <td class="ioc-index">${index + 1}</td>
@@ -2792,6 +2850,9 @@ Date:
                         <td><span class="vt-detections"><span class="vt-malicious">${malCount}</span>/<span class="vt-clean">${total}</span></span></td>
                         <td>${abuseText}</td>
                         <td>${whoisText}</td>
+                        <td style="min-width:90px;">${tfText}</td>
+                        <td style="min-width:90px;">${uhText}</td>
+                        <td style="min-width:90px;">${mbText}</td>
                         <td><span class="threat-score ${threatScore >= 80 ? 'threat-score-high' : threatScore >= 50 ? 'threat-score-medium' : 'threat-score-low'}">${threatScore}</span><div class="threat-bar"><div class="threat-bar-fill" style="width:${threatScore}%;background:${threatScore >= 80 ? '#ef4444' : threatScore >= 50 ? '#f59e0b' : '#22c55e'}"></div></div><span class="category-badge ${badgeClass}">${riskLevel}</span></td>
                         <td><button class="copy-btn-small" onclick="copyBulkRow('${r.ioc}')">Copy</button></td>
                     </tr>
@@ -2802,7 +2863,6 @@ Date:
 
             html += '</tbody></table>';
             container.innerHTML = html;
-            document.getElementById('vtEmpty').style.display = 'none';
             
             // Populate filter dropdowns with actual values
             setTimeout(() => {
@@ -2833,10 +2893,81 @@ Date:
         }
 
         function updateBulkIocCount(count = bulkResults.length) {
-            const tabCountEl = document.getElementById('bulk-tab-count');
-            if (tabCountEl) {
-                tabCountEl.textContent = String(count || 0);
-            }
+            // kept as no-op — BSB handles its own display
+        }
+
+        // ── Bulk Scan Button (BSB) state helpers ──────────────────────────
+        function bsbSetIdle() {
+            const el = document.getElementById('bulkScanBtn');
+            if (!el) return;
+            el.style.display = 'inline-flex';
+            el.innerHTML = `
+                <div class="bsb-idle">
+                    <svg width="14" height="14" viewBox="0 0 16 16" fill="none">
+                        <rect x="1" y="2" width="14" height="2.5" rx="1.2" fill="#58a6ff"/>
+                        <rect x="1" y="6.75" width="10" height="2.5" rx="1.2" fill="#388bfd"/>
+                        <rect x="1" y="11.5" width="7" height="2.5" rx="1.2" fill="#1f6feb"/>
+                        <circle cx="13" cy="12.75" r="2.8" stroke="#58a6ff" stroke-width="1.4"/>
+                        <line x1="15" y1="14.75" x2="16.2" y2="15.95" stroke="#58a6ff" stroke-width="1.5" stroke-linecap="round"/>
+                    </svg>
+                    Bulk scan
+                </div>`;
+        }
+
+        function bsbSetScanning(done, total, currentIoc) {
+            const el = document.getElementById('bulkScanBtn');
+            if (!el) return;
+            el.style.display = 'inline-flex';
+            const pct = total > 0 ? Math.round((done / total) * 100) : 0;
+            const eta = Math.ceil((total - done) * 0.5);
+            const iocDisplay = currentIoc
+                ? (currentIoc.length > 22 ? currentIoc.slice(0, 22) + '…' : currentIoc)
+                : 'querying…';
+            el.innerHTML = `
+                <div class="bsb-scanning">
+                    <div class="bsb-scan-top">
+                        <div class="bsb-sonar">
+                            <div class="bsb-sonar-ring"></div>
+                            <div class="bsb-sonar-ring"></div>
+                            <div class="bsb-sonar-dot"></div>
+                        </div>
+                        <div class="bsb-scan-text">
+                            <div class="bsb-scan-title">Scanning indicators</div>
+                            <div class="bsb-scan-ioc">${iocDisplay}</div>
+                        </div>
+                        <div class="bsb-scan-pct">${pct}%</div>
+                    </div>
+                    <div class="bsb-bar-track">
+                        <div class="bsb-bar-fill" style="width:${pct}%"></div>
+                    </div>
+                    <div class="bsb-scan-footer">
+                        <span>${done} / ${total} scanned</span>
+                        <span>${done < total ? '~' + eta + 's left' : 'finishing…'}</span>
+                    </div>
+                </div>`;
+        }
+
+        function bsbSetDone(total) {
+            const el = document.getElementById('bulkScanBtn');
+            if (!el) return;
+            el.style.display = 'inline-flex';
+            el.innerHTML = `
+                <div class="bsb-done">
+                    <div class="bsb-check">
+                        <svg width="9" height="9" viewBox="0 0 10 10" fill="none">
+                            <polyline points="2,5 4.2,7.5 8,3" stroke="#fff" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+                        </svg>
+                    </div>
+                    <div class="bsb-done-text">
+                        <div class="bsb-done-label">Scan complete</div>
+                        <div class="bsb-done-sub">${total} indicator${total !== 1 ? 's' : ''}</div>
+                    </div>
+                </div>`;
+        }
+
+        function bsbHide() {
+            const el = document.getElementById('bulkScanBtn');
+            if (el) el.style.display = 'none';
         }
 
         // Copy single bulk row
@@ -2886,18 +3017,14 @@ Date:
 
         // Copy all bulk results
         function copyAllBulkResults() {
-            let text = 'IOC | Type | VirusTotal | AbuseIPDB | WHOIS Age | WHOIS Expires | WHOIS Registrar\n';
-            text += '--- | --- | --- | --- | --- | --- | ---\n';
+            let text = 'IOC | Type | VirusTotal | AbuseIPDB | WHOIS Age | WHOIS Expires | WHOIS Registrar | ThreatFox | URLhaus | MalwareBazaar\n';
+            text += '--- | --- | --- | --- | --- | --- | --- | --- | --- | ---\n';
             
             bulkResults.forEach(r => {
-                let malCount = 0;
-                let abuseConf = 0;
-                let reports = 0;
-                let total = 0;
-                let whoisAge = '-';
-                let whoisExpires = '-';
-                let whoisRegistrar = '-';
-                
+                let malCount = 0, abuseConf = 0, reports = 0, total = 0;
+                let whoisAge = '-', whoisExpires = '-', whoisRegistrar = '-';
+                let tfCol = '-', uhCol = '-', mbCol = '-';
+
                 if (r.vt && r.vt.data && r.vt.data.attributes && r.vt.data.attributes.last_analysis_stats) {
                     const stats = r.vt.data.attributes.last_analysis_stats;
                     total = Object.values(stats).reduce((a, b) => a + b, 0);
@@ -2910,21 +3037,22 @@ Date:
                 if (r.whois && !r.whoisError && !r.whois.notAvailable) {
                     const created = r.whois.creation_date ? new Date(r.whois.creation_date) : null;
                     const expires = r.whois.expiration_date ? new Date(r.whois.expiration_date) : null;
-                    const now = new Date();
-                    
                     whoisRegistrar = r.whois.registrar || '-';
-                    
-                    if (created) {
-                        const ageDays = Math.floor((now - created) / (1000 * 60 * 60 * 24));
-                        whoisAge = `${ageDays} days`;
-                    }
-                    
-                    if (expires) {
-                        whoisExpires = expires.toLocaleDateString();
-                    }
+                    if (created) whoisAge = Math.floor((new Date() - created) / (1000 * 60 * 60 * 24)) + ' days';
+                    if (expires) whoisExpires = expires.toLocaleDateString();
                 }
-                
-                text += `${r.ioc} | ${r.type} | ${malCount}/${total} | ${abuseConf}%/${reports} | ${whoisAge} | ${whoisExpires} | ${whoisRegistrar}\n`;
+                if (r.threatfox && r.threatfox.found && r.threatfox.iocs && r.threatfox.iocs.length > 0) {
+                    const tf = r.threatfox.iocs[0];
+                    tfCol = `${tf.malware_printable || tf.malware || 'Match'} (${tf.confidence_level || 0}%)`;
+                } else if (r.threatfox && !r.threatfox.error) { tfCol = 'Clean'; }
+                if (r.urlhaus && r.urlhaus.found) {
+                    uhCol = `${r.urlhaus.url_status || 'Listed'} - ${r.urlhaus.threat || ''}`;
+                } else if (r.urlhaus && !r.urlhaus.error) { uhCol = 'Clean'; }
+                if (r.malwarebazaar && r.malwarebazaar.found) {
+                    mbCol = r.malwarebazaar.malware_family || 'Malware';
+                } else if (r.malwarebazaar && !r.malwarebazaar.error) { mbCol = 'Clean'; }
+
+                text += `${r.ioc} | ${r.type} | ${malCount}/${total} | ${abuseConf}%/${reports} | ${whoisAge} | ${whoisExpires} | ${whoisRegistrar} | ${tfCol} | ${uhCol} | ${mbCol}\n`;
             });
             
             navigator.clipboard.writeText(text);
@@ -3085,63 +3213,125 @@ Date:
 
         // Export Bulk Results to CSV
         function exportBulkCSV() {
-            let csv = 'IOC,Type,VirusTotal Detection,Risk Level,AbuseIPDB Confidence,AbuseIPDB Reports,Domain,CountryCode,Hostnames,IsPublic,IsWhitelisted,UsageType,IPVersion,NumDistinctUsers,LastReportedAt,IsTor,WHOIS Created,WHOIS Expires,WHOIS Registrar,WHOIS Age\n';
-            
+            // Column order: IOC identity → Threat Intel (VT + abuse.ch) → WHOIS → Risk → AbuseIPDB details
+            const header = [
+                'IOC', 'Type',
+                // ── Core threat verdict ──────────────────────────────
+                'VirusTotal Detection',
+                'ThreatFox Hit', 'ThreatFox Malware', 'ThreatFox Confidence',
+                'URLhaus Status', 'URLhaus Threat',
+                'MalwareBazaar Family',
+                // ── Domain intelligence ──────────────────────────────
+                'WHOIS Age', 'WHOIS Created', 'WHOIS Expires', 'WHOIS Registrar',
+                // ── Overall verdict ──────────────────────────────────
+                'Risk Level',
+                // ── IP / Abuse intelligence ──────────────────────────
+                'AbuseIPDB Confidence', 'AbuseIPDB Reports',
+                'Domain', 'CountryCode', 'IsTor',
+                'Hostnames', 'IsPublic', 'IsWhitelisted',
+                'UsageType', 'IPVersion', 'NumDistinctUsers', 'LastReportedAt'
+            ].join(',') + '\n';
+
+            let csv = header;
+
             bulkResults.forEach(r => {
+                // ── VirusTotal ───────────────────────────────────────
                 let malCount = 0;
-                let abuseConf = '-';
-                let abuseRep = '-';
-                let domain = '-';
-                let countryCode = '-';
-                let hostnames = '-';
-                let isPublic = '-';
-                let isWhitelisted = '-';
-                let usageType = '-';
-                let ipVersion = '-';
-                let numDistinctUsers = '-';
-                let lastReportedAt = '-';
-                let isTor = '-';
-                let whoisCreated = '-';
-                let whoisExpires = '-';
-                let whoisRegistrar = '-';
-                let whoisAge = '-';
-                
                 if (r.vt && r.vt.data && r.vt.data.attributes && r.vt.data.attributes.last_analysis_stats) {
-                    const stats = r.vt.data.attributes.last_analysis_stats;
-                    malCount = (stats.malicious || 0) + (stats.suspicious || 0);
+                    const s = r.vt.data.attributes.last_analysis_stats;
+                    malCount = (s.malicious || 0) + (s.suspicious || 0);
                 }
-                if (r.abuseipdb && !r.abuseipdb.error) {
-                    abuseConf = r.abuseipdb.abuseConfidenceScore + '%';
-                    abuseRep = r.abuseipdb.totalReports || 0;
-                    domain = r.abuseipdb.domain || '-';
-                    countryCode = r.abuseipdb.countryCode || '-';
-                    hostnames = r.abuseipdb.hostnames ? r.abuseipdb.hostnames.join('; ') : '-';
-                    isPublic = r.abuseipdb.isPublic !== undefined ? (r.abuseipdb.isPublic ? 'TRUE' : 'FALSE') : '-';
-                    isWhitelisted = r.abuseipdb.isWhitelisted ? 'TRUE' : 'FALSE';
-                    usageType = r.abuseipdb.usageType || '-';
-                    ipVersion = r.abuseipdb.ipVersion || '-';
-                    numDistinctUsers = r.abuseipdb.numDistinctUsers || 0;
-                    lastReportedAt = r.abuseipdb.lastReportedAt || '-';
-                    isTor = r.abuseipdb.isTor ? 'TRUE' : 'FALSE';
+
+                // ── ThreatFox ────────────────────────────────────────
+                let tfHit = '-', tfMalware = '-', tfConf = '-';
+                if (r.threatfox && r.threatfox.found && r.threatfox.iocs && r.threatfox.iocs.length > 0) {
+                    const tf = r.threatfox.iocs[0];
+                    tfHit     = 'Yes';
+                    tfMalware = (tf.malware_printable || tf.malware || 'Unknown').replace(/,/g, ' ');
+                    tfConf    = (tf.confidence_level || 0) + '%';
+                } else if (r.threatfox && !r.threatfox.error) {
+                    tfHit = 'No';
                 }
+
+                // ── URLhaus ──────────────────────────────────────────
+                let uhStatus = '-', uhThreat = '-';
+                if (r.urlhaus && r.urlhaus.found) {
+                    uhStatus = r.urlhaus.url_status || 'listed';
+                    uhThreat = (r.urlhaus.threat || '-').replace(/,/g, ' ');
+                } else if (r.urlhaus && !r.urlhaus.error) {
+                    uhStatus = 'clean';
+                }
+
+                // ── MalwareBazaar ────────────────────────────────────
+                let mbFamily = '-';
+                if (r.malwarebazaar && r.malwarebazaar.found) {
+                    mbFamily = (r.malwarebazaar.malware_family || 'Unknown').replace(/,/g, ' ');
+                } else if (r.malwarebazaar && !r.malwarebazaar.error) {
+                    mbFamily = 'clean';
+                }
+
+                // ── WHOIS ────────────────────────────────────────────
+                let whoisAge = '-', whoisCreated = '-', whoisExpires = '-', whoisRegistrar = '-';
                 if (r.whois && !r.whoisError && !r.whois.notAvailable) {
                     if (r.whois.creation_date) {
                         const created = new Date(r.whois.creation_date);
                         whoisCreated = created.toLocaleDateString();
-                        const ageDays = Math.floor((new Date() - created) / (1000 * 60 * 60 * 24));
-                        whoisAge = `${ageDays} days`;
+                        whoisAge     = Math.floor((new Date() - created) / (1000 * 60 * 60 * 24)) + ' days';
                     }
-                    whoisExpires = r.whois.expiration_date ? new Date(r.whois.expiration_date).toLocaleDateString() : '-';
-                    whoisRegistrar = r.whois.registrar || '-';
+                    whoisExpires   = r.whois.expiration_date ? new Date(r.whois.expiration_date).toLocaleDateString() : '-';
+                    whoisRegistrar = (r.whois.registrar || '-').replace(/,/g, ' ');
                 }
-                
-                const risk = malCount > 10 || (r.abuseipdb && r.abuseipdb.abuseConfidenceScore > 75) ? 'HIGH' : 
-                             malCount > 0 || (r.abuseipdb && r.abuseipdb.abuseConfidenceScore > 25) ? 'MEDIUM' : 'LOW';
-                
-                csv += `"${r.ioc}","${r.type}","${malCount}","${risk}","${abuseConf}","${abuseRep}","${domain}","${countryCode}","${hostnames}","${isPublic}","${isWhitelisted}","${usageType}","${ipVersion}","${numDistinctUsers}","${lastReportedAt}","${isTor}","${whoisCreated}","${whoisExpires}","${whoisRegistrar}","${whoisAge}"\n`;
+
+                // ── Risk verdict ─────────────────────────────────────
+                const abuseScore = (r.abuseipdb && !r.abuseipdb.error) ? (r.abuseipdb.abuseConfidenceScore || 0) : 0;
+                const risk = (malCount > 10 || abuseScore > 75 ||
+                              (r.threatfox && r.threatfox.found) ||
+                              (r.urlhaus && r.urlhaus.found && r.urlhaus.url_status === 'online') ||
+                              (r.malwarebazaar && r.malwarebazaar.found))
+                    ? 'HIGH'
+                    : (malCount > 0 || abuseScore > 25 ||
+                       (r.urlhaus && r.urlhaus.found))
+                    ? 'MEDIUM'
+                    : 'LOW';
+
+                // ── AbuseIPDB ────────────────────────────────────────
+                let abuseConf = '-', abuseRep = '-', domain = '-', countryCode = '-';
+                let isTor = '-', hostnames = '-', isPublic = '-', isWhitelisted = '-';
+                let usageType = '-', ipVersion = '-', numDistinctUsers = '-', lastReportedAt = '-';
+                if (r.abuseipdb && !r.abuseipdb.error) {
+                    abuseConf        = r.abuseipdb.abuseConfidenceScore + '%';
+                    abuseRep         = r.abuseipdb.totalReports || 0;
+                    domain           = (r.abuseipdb.domain || '-').replace(/,/g, ' ');
+                    countryCode      = r.abuseipdb.countryCode || '-';
+                    isTor            = r.abuseipdb.isTor ? 'TRUE' : 'FALSE';
+                    hostnames        = r.abuseipdb.hostnames ? r.abuseipdb.hostnames.join('; ') : '-';
+                    isPublic         = r.abuseipdb.isPublic !== undefined ? (r.abuseipdb.isPublic ? 'TRUE' : 'FALSE') : '-';
+                    isWhitelisted    = r.abuseipdb.isWhitelisted ? 'TRUE' : 'FALSE';
+                    usageType        = (r.abuseipdb.usageType || '-').replace(/,/g, ' ');
+                    ipVersion        = r.abuseipdb.ipVersion || '-';
+                    numDistinctUsers = r.abuseipdb.numDistinctUsers || 0;
+                    lastReportedAt   = r.abuseipdb.lastReportedAt || '-';
+                }
+
+                // ── Build row in column order ─────────────────────────
+                const row = [
+                    r.ioc, r.type,
+                    malCount,
+                    tfHit, tfMalware, tfConf,
+                    uhStatus, uhThreat,
+                    mbFamily,
+                    whoisAge, whoisCreated, whoisExpires, whoisRegistrar,
+                    risk,
+                    abuseConf, abuseRep,
+                    domain, countryCode, isTor,
+                    hostnames, isPublic, isWhitelisted,
+                    usageType, ipVersion, numDistinctUsers, lastReportedAt
+                ].map(v => `"${String(v).replace(/"/g, '""')}"`).join(',');
+
+                csv += row + '\n';
             });
-            
-            downloadFile(csv, 'bulk_scan_results.csv', 'text/csv');
+
+            downloadFile(csv, `threatanalyzer_bulk_${new Date().toISOString().slice(0,10)}.csv`, 'text/csv');
         }
 
         // Export Single Result to TXT - SOC Report Format
@@ -3351,24 +3541,18 @@ Date:
             txt += '===================\n\n';
             
             bulkResults.forEach(r => {
-                let malCount = 0;
-                let abuseConf = 'N/A';
-                let abuseRep = 'N/A';
-                
                 txt += `IOC: ${r.ioc}\n`;
                 txt += `Type: ${r.type}\n`;
-                
+
                 if (r.vt && r.vt.data && r.vt.data.attributes && r.vt.data.attributes.last_analysis_stats) {
                     const stats = r.vt.data.attributes.last_analysis_stats;
                     const total = Object.values(stats).reduce((a, b) => a + b, 0);
-                    malCount = (stats.malicious || 0) + (stats.suspicious || 0);
+                    const malCount = (stats.malicious || 0) + (stats.suspicious || 0);
                     txt += `VirusTotal: ${malCount}/${total} detections\n`;
                 }
                 if (r.abuseipdb && !r.abuseipdb.error) {
-                    abuseConf = r.abuseipdb.abuseConfidenceScore + '%';
-                    abuseRep = r.abuseipdb.totalReports || 0;
-                    txt += `AbuseIPDB Confidence: ${abuseConf}\n`;
-                    txt += `AbuseIPDB Total Reports: ${abuseRep}\n`;
+                    txt += `AbuseIPDB Confidence: ${r.abuseipdb.abuseConfidenceScore}%\n`;
+                    txt += `AbuseIPDB Total Reports: ${r.abuseipdb.totalReports || 0}\n`;
                     txt += `Domain: ${r.abuseipdb.domain || 'N/A'}\n`;
                     txt += `Country Code: ${r.abuseipdb.countryCode || 'N/A'}\n`;
                     txt += `Hostnames: ${r.abuseipdb.hostnames ? r.abuseipdb.hostnames.join(', ') : 'N/A'}\n`;
@@ -3380,6 +3564,40 @@ Date:
                     txt += `Last Reported At: ${r.abuseipdb.lastReportedAt || 'N/A'}\n`;
                     txt += `Is Tor: ${r.abuseipdb.isTor ? 'Yes' : 'No'}\n`;
                 }
+                if (r.whois && !r.whoisError && !r.whois.notAvailable) {
+                    txt += `WHOIS Created: ${r.whois.creation_date ? new Date(r.whois.creation_date).toLocaleDateString() : 'N/A'}\n`;
+                    txt += `WHOIS Expires: ${r.whois.expiration_date ? new Date(r.whois.expiration_date).toLocaleDateString() : 'N/A'}\n`;
+                    txt += `WHOIS Registrar: ${r.whois.registrar || 'N/A'}\n`;
+                }
+                // ThreatFox
+                if (r.threatfox && r.threatfox.found && r.threatfox.iocs && r.threatfox.iocs.length > 0) {
+                    const tf = r.threatfox.iocs[0];
+                    txt += `ThreatFox: MATCH — ${tf.malware_printable || tf.malware || 'Unknown'} (${tf.confidence_level || 0}% confidence)\n`;
+                    if (tf.threat_type_desc) txt += `ThreatFox Threat Type: ${tf.threat_type_desc}\n`;
+                    if (tf.first_seen) txt += `ThreatFox First Seen: ${tf.first_seen.split(' ')[0]}\n`;
+                    if (tf.tags && tf.tags.length > 0) txt += `ThreatFox Tags: ${tf.tags.join(', ')}\n`;
+                } else if (r.threatfox && !r.threatfox.error) {
+                    txt += `ThreatFox: Not found\n`;
+                }
+                // URLhaus
+                if (r.urlhaus && r.urlhaus.found) {
+                    txt += `URLhaus: ${r.urlhaus.url_status || 'Listed'} — ${r.urlhaus.threat || 'Unknown threat'}\n`;
+                    if (r.urlhaus.date_added) txt += `URLhaus Date Added: ${r.urlhaus.date_added.split(' ')[0]}\n`;
+                    if (r.urlhaus.tags && r.urlhaus.tags.length > 0) txt += `URLhaus Tags: ${r.urlhaus.tags.join(', ')}\n`;
+                } else if (r.urlhaus && !r.urlhaus.error) {
+                    txt += `URLhaus: Not found\n`;
+                }
+                // MalwareBazaar
+                if (r.malwarebazaar && r.malwarebazaar.found) {
+                    txt += `MalwareBazaar: MATCH — ${r.malwarebazaar.malware_family || 'Unknown'}\n`;
+                    if (r.malwarebazaar.file_name) txt += `MalwareBazaar File Name: ${r.malwarebazaar.file_name}\n`;
+                    if (r.malwarebazaar.file_type) txt += `MalwareBazaar File Type: ${r.malwarebazaar.file_type}\n`;
+                    if (r.malwarebazaar.first_seen) txt += `MalwareBazaar First Seen: ${r.malwarebazaar.first_seen.split(' ')[0]}\n`;
+                    if (r.malwarebazaar.bazaar_ref) txt += `MalwareBazaar Ref: ${r.malwarebazaar.bazaar_ref}\n`;
+                } else if (r.malwarebazaar && !r.malwarebazaar.error) {
+                    txt += `MalwareBazaar: Not found\n`;
+                }
+
                 txt += '\n';
             });
             
@@ -3426,10 +3644,6 @@ Date:
             showToast(msg, 'error');
         }
 
-        // CORS Proxy (fallback when direct API calls fail)
-        // Using corsproxy.io which supports custom headers
-        const CORS_PROXY = 'https://corsproxy.io/?';
-        
         // Worker API endpoint - routes through Cloudflare Worker to avoid CORS and protect API keys
         const WORKER_API_URL = 'https://threatanalyzer-api.juanlunadevelop.workers.dev';
         
@@ -3766,25 +3980,12 @@ Date:
 
                 console.log('VirusTotal request:', endpoint);
 
-                // Try direct API call first (no proxy)
-                let response;
-                try {
-                    response = await fetch(endpoint, {
-                        headers: {
-                            'x-apikey': keys.vt,
-                            'Content-Type': 'application/json'
-                        }
-                    });
-                } catch (directError) {
-                    // If direct fails, try with CORS proxy
-                    const proxyUrl = CORS_PROXY + encodeURIComponent(endpoint);
-                    response = await fetch(proxyUrl, {
-                        headers: {
-                            'x-apikey': keys.vt,
-                            'Content-Type': 'application/json'
-                        }
-                    });
-                }
+                const response = await fetch(endpoint, {
+                    headers: {
+                        'x-apikey': keys.vt,
+                        'Content-Type': 'application/json'
+                    }
+                });
 
                 if (!response.ok) {
                     if (response.status === 404) {
@@ -4093,7 +4294,7 @@ Date:
                 }
 
                 // Query AbuseIPDB API
-                const response = await fetch(CORS_PROXY + encodeURIComponent(`https://api.abuseipdb.com/api/v2/check?ipAddress=${encodeURIComponent(ipToQuery)}&maxAgeInDays=90&verbose=`), {
+                const response = await fetch(`https://api.abuseipdb.com/api/v2/check?ipAddress=${encodeURIComponent(ipToQuery)}&maxAgeInDays=90&verbose=`, {
                     headers: {
                         'Key': keys.abuseipdb,
                         'Accept': 'application/json'
@@ -4211,253 +4412,41 @@ Date:
         }
 
         // URLScan.io API - Submit new scan with polling for results
+        // URLScan.io — delegated entirely to Worker (handles submit + poll server-side)
         async function scanURLScan(ioc) {
+            console.log('scanURLScan: delegating to Worker for', ioc);
             const keys = getKeys();
-            
-            // Show analysis in progress message
             const container = document.getElementById('urlscanResults');
-            if (container) {
-                container.innerHTML = `
-                    <div class="loading">
-                        <div class="spinner"></div>
-                        <span>URLScan analysis in progress...</span>
-                    </div>
-                `;
-            }
             const urlscanEmpty = document.getElementById('urlscanEmpty');
+            if (container) container.innerHTML = `
+                <div class="loading"><div class="spinner"></div>
+                <span>URLScan analysis in progress...</span></div>`;
             if (urlscanEmpty) urlscanEmpty.style.display = 'none';
-            
-            // Extract URL - ensure it has protocol
-            let scanUrl = ioc.startsWith('http') ? ioc : 'https://' + ioc;
-            
-            console.log('URLScan: Submitting new scan for:', scanUrl);
-            
             try {
-                // Use the search endpoint filtered by domain
-                // Build the search query as a plain string first
-                const searchQuery = `domain:${domain}`;
-                // Encode the query once
-                const encodedQuery = encodeURIComponent(searchQuery);
-                // Construct the API URL
-                const urlscanUrl = `https://urlscan.io/api/v1/search/?q=${encodedQuery}&size=25`;
-                // If using the CORS proxy, encode the entire URL only once
-                const proxyUrl = `https://corsproxy.io/?${encodeURIComponent(urlscanUrl)}`;
-                
-                const response = await fetch(proxyUrl, {
+                const response = await fetch(WORKER_API_URL + '/scan?value=' + encodeURIComponent(ioc), {
                     headers: {
-                        'API-Key': keys.urlscan,
-                        'Accept': 'application/json'
+                        'Accept':          'application/json',
+                        'X-VT-API-Key':    keys.vt        || '',
+                        'X-AbuseIPDB-Key': keys.abuseipdb || '',
+                        'X-Whois-Key':     keys.whois     || '',
+                        'X-URLScan-Key':   keys.urlscan   || '',
+                        'X-AbuseCH-Key':   keys.abusech   || ''
                     }
                 });
-
-                if (!response.ok) {
-                    const errorText = await response.text();
-                    throw new Error(`HTTP ${response.status}: ${errorText || 'Failed to fetch URLScan data'}`);
-                }
-
+                if (!response.ok) throw new Error(`Worker error: ${response.status}`);
                 const data = await response.json();
-                console.log('URLScan search results:', data.total, 'results');
-                if (data.results && data.results.length > 0) {
-                    console.log('First result:', data.results[0]?._id, 'page.domain:', data.results[0]?.page?.domain, 'apexDomain:', data.results[0]?.page?.apexDomain);
-                    // Pick the best matching result for the queried domain
-                    const normalizeHost = (value) => {
-                        if (!value || typeof value !== 'string') return '';
-                        let host = value.trim().toLowerCase();
-                        host = host.replace(/^https?:\/\//, '').replace(/^www\./, '').replace(/\/$/, '');
-                        return host;
-                    };
-
-                    const requestedHost = normalizeHost(domain);
-                    const getPrimaryTaskHost = (value) => {
-                        if (!value || typeof value !== 'string') return '';
-                        try {
-                            return normalizeHost(new URL(value).hostname);
-                        } catch (_) {
-                            return normalizeHost(value);
-                        }
-                    };
-
-                    const normalizeHostFromUrl = (value) => {
-                        if (!value || typeof value !== 'string') return '';
-                        try {
-                            return normalizeHost(new URL(value).hostname);
-                        } catch (_) {
-                            return normalizeHost(value);
-                        }
-                    };
-
-                    // Simple domain match: exact or subdomain of query domain
-                    const domainMatch = (resultUrl, queryDomain) => {
-                        if (!resultUrl || !queryDomain) return false;
-                        try {
-                            const host = new URL(resultUrl).hostname.toLowerCase();
-                            const domain = queryDomain.toLowerCase();
-                            return host === domain || host.endsWith('.' + domain);
-                        } catch (_) {
-                            return false;
-                        }
-                    };
-
-                    // Find first result where page.apexDomain matches query domain
-                    let searchResult = null;
-                    let effectiveUrl = '';
-
-                    for (const result of data.results) {
-                        const pageUrl = result?.page?.url || '';
-                        const taskUrl = result?.task?.url || '';
-                        const apexDomain = result?.page?.apexDomain || '';
-                        const pageDomain = result?.page?.domain || '';
-
-                        // Use apexDomain for accurate root domain matching
-                        if (apexDomain && apexDomain.toLowerCase() === requestedHost.toLowerCase()) {
-                            searchResult = result;
-                            effectiveUrl = pageUrl || taskUrl;
-                            break;
-                        }
-                        // Fallback: check page.domain for subdomain matches
-                        if (pageDomain && requestedHost && (
-                            pageDomain.toLowerCase() === requestedHost ||
-                            pageDomain.toLowerCase().endsWith('.' + requestedHost)
-                        )) {
-                            searchResult = result;
-                            effectiveUrl = pageUrl || taskUrl;
-                            break;
-                        }
-                    }
-
-                    if (!searchResult) {
-                        // Fallback: try broader search with page.url query
-                        const fallbackQuery = `page.url:*${requestedHost}*`;
-                        const fallbackUrl = `https://urlscan.io/api/v1/search/?q=${encodeURIComponent(fallbackQuery)}&size=10`;
-                        const fallbackProxyUrl = `https://corsproxy.io/?${encodeURIComponent(fallbackUrl)}`;
-                        
-                        try {
-                            const fallbackResponse = await fetch(fallbackProxyUrl, {
-                                headers: {
-                                    'API-Key': keys.urlscan,
-                                    'Accept': 'application/json'
-                                }
-                            });
-                            if (fallbackResponse.ok) {
-                                const fallbackData = await fallbackResponse.json();
-                                if (fallbackData.results && fallbackData.results.length > 0) {
-                                    // Use first fallback result
-                                    searchResult = fallbackData.results[0];
-                                    console.log('URLScan fallback found result:', searchResult?._id);
-                                }
-                            }
-                        } catch (e) {
-                            console.error('URLScan fallback query failed:', e);
-                        }
-                        
-                        if (!searchResult) {
-                            showError('urlscan', `No URLScan result found for domain ${requestedHost}`);
-                            return;
-                        }
-                    }
-                    const uuid = searchResult?._id;
-                    
-                    // Fetch the full result using the UUID
-                    // If 413 (payload too large), fallback to search result
-                    let fullResult = null;
-                    if (uuid) {
-                        try {
-                            const resultUrl = `https://urlscan.io/api/v1/result/${uuid}/`;
-                            const resultProxyUrl = `https://corsproxy.io/?${encodeURIComponent(resultUrl)}`;
-                            const resultResponse = await fetch(resultProxyUrl, {
-                                headers: {
-                                    'API-Key': keys.urlscan,
-                                    'Accept': 'application/json'
-                                }
-                            });
-                            if (resultResponse.ok) {
-                                fullResult = await resultResponse.json();
-                            } else if (resultResponse.status === 413) {
-                                console.warn('URLScan full result too large (413), using search result fallback.');
-                                fullResult = searchResult; // Use search result directly
-                            }
-                        } catch (e) {
-                            console.error('Error fetching full URLScan result:', e);
-                            fullResult = searchResult; // Fallback to search result
-                        }
-                    }
-                    
-                    const mergedResult = fullResult || searchResult;
-                    currentResults.urlscan = mergedResult;
-                    
-                    // Safely render with null check
-                    const urlscanContainer = document.getElementById('urlscanResults');
-                    if (urlscanContainer) {
-                        renderURLScan(mergedResult);
-                    }
-                    
-                    // Update combined view safely
-                    const combinedContainer = document.getElementById('combinedResults');
-                    if (combinedContainer && currentResults.vt) {
-                        renderCombined();
-                    }
+                if (data.urlscan && !data.urlscan.error) {
+                    currentResults.urlscan = data.urlscan;
+                    renderURLScan(data.urlscan);
                 } else {
-                    // Try alternative query with page.url
-                    const urlQuery = `page.url:${domain}`;
-                    const altUrlscanUrl = `https://urlscan.io/api/v1/search/?q=${encodeURIComponent(urlQuery)}&size=1`;
-                    const altProxyUrl = `https://corsproxy.io/?${encodeURIComponent(altUrlscanUrl)}`;
-                    
-                    const altResponse = await fetch(altProxyUrl, {
-                        headers: {
-                            'API-Key': keys.urlscan,
-                            'Accept': 'application/json'
-                        }
-                    });
-                    
-                    if (altResponse.ok) {
-                        const altData = await altResponse.json();
-                        if (altData.results && altData.results.length > 0) {
-                            const searchResult = altData.results[0];
-                            const uuid = searchResult._id;
-                            
-                            // Fetch the full result using the UUID
-                            let fullResult = null;
-                            if (uuid) {
-                                try {
-                                    const resultUrl = `https://urlscan.io/api/v1/result/${uuid}/`;
-                                    const resultProxyUrl = `https://corsproxy.io/?${encodeURIComponent(resultUrl)}`;
-                                    const resultResponse = await fetch(resultProxyUrl, {
-                                        headers: {
-                                            'API-Key': keys.urlscan,
-                                            'Accept': 'application/json'
-                                        }
-                                    });
-                                    if (resultResponse.ok) {
-                                        fullResult = await resultResponse.json();
-                                    }
-                                } catch (e) {
-                                    console.error('Error fetching full URLScan result:', e);
-                                    fullResult = searchResult;
-                                }
-                            }
-                            
-                            currentResults.urlscan = fullResult || searchResult;
-                            renderURLScan(currentResults.urlscan);
-                            
-                            const combinedContainer = document.getElementById('combinedResults');
-                            if (combinedContainer && currentResults.vt) {
-                                renderCombined();
-                            }
-                        } else {
-                            showError('urlscan', 'URLScan data not available.');
-                        }
-                    } else {
-                        showError('urlscan', 'URLScan data not available.');
-                    }
+                    showError('urlscan', data.urlscan?.error || 'URLScan data not available');
                 }
-
-            } catch (error) {
-                console.error('URLScan Error:', error);
-                showError('urlscan', error.message);
+            } catch (err) {
+                showError('urlscan', err.message);
             }
         }
 
-        function renderURLScan(data) {
+                function renderURLScan(data) {
             const container = document.getElementById('urlscanResults');
             
             if (!container) {

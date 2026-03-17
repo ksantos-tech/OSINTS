@@ -6,7 +6,7 @@ export default {
         headers: {
           "Access-Control-Allow-Origin": "*",
           "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
-          "Access-Control-Allow-Headers": "Content-Type, X-VT-API-Key, X-AbuseIPDB-Key, X-Whois-Key, X-URLScan-Key"
+          "Access-Control-Allow-Headers": "Content-Type, X-VT-API-Key, X-AbuseIPDB-Key, X-Whois-Key, X-URLScan-Key, X-AbuseCH-Key"
         }
       });
     }
@@ -20,9 +20,10 @@ export default {
     const abuseipdbKey = request.headers.get("X-AbuseIPDB-Key") || env.ABUSEIPDB_KEY;
     const whoisApiKey = request.headers.get("X-Whois-Key") || env.WHOIS_API_KEY;
     const urlscanKey = request.headers.get("X-URLScan-Key") || env.URLSCAN_KEY;
+    // Single Auth-Key covers ThreatFox, URLhaus, and MalwareBazaar (all abuse.ch platforms)
+    const abusechKey = request.headers.get("X-AbuseCH-Key") || env.ABUSECH_KEY;
 
-    // Debug: Log which keys are available
-    console.log("API Keys - VT:", !!vtApiKey, "AbuseIPDB:", !!abuseipdbKey, "WHOIS:", !!whoisApiKey, "URLScan:", !!urlscanKey);
+    console.log("API Keys - VT:", !!vtApiKey, "AbuseIPDB:", !!abuseipdbKey, "WHOIS:", !!whoisApiKey, "URLScan:", !!urlscanKey, "AbuseCH:", !!abusechKey);
 
     // Route: /urlscan/result?uuid=<scanId>
     // Polled by frontend when Worker returned status:"pending".
@@ -99,8 +100,8 @@ export default {
       // Make VirusTotal, AbuseIPDB, WHOIS calls in PARALLEL (no polling - fast)
       const fastPromises = [];
 
-      // VIRUSTOTAL - supports IP, domain, URL
-      if (type === "ip" || type === "domain" || type === "url") {
+      // VIRUSTOTAL - supports IP, domain, URL, and hash
+      if (type === "ip" || type === "domain" || type === "url" || type === "hash") {
         let vtEndpoint = "";
         if (type === "ip") {
           vtEndpoint = `https://www.virustotal.com/api/v3/ip_addresses/${value}`;
@@ -113,6 +114,9 @@ export default {
             .replace(/\+/g, "-")
             .replace(/\//g, "_");
           vtEndpoint = `https://www.virustotal.com/api/v3/urls/${encoded}`;
+        } else if (type === "hash") {
+          // MD5 (32), SHA1 (40), SHA256 (64) all work directly
+          vtEndpoint = `https://www.virustotal.com/api/v3/files/${value}`;
         }
 
         if (vtApiKey) {
@@ -238,6 +242,184 @@ export default {
         }
       }
 
+      // ── THREATFOX — IOC lookup (IP, domain, URL, hash) ──────────────────────
+      // No key required for search_ioc queries — Auth-Key is optional but helps
+      // with rate limits. We send it when available.
+      if (abusechKey || true) { // ThreatFox search_ioc is available without a key
+        fastPromises.push(
+          (async () => {
+            try {
+              // Normalise the IOC value for ThreatFox:
+              // IPs with port (e.g. "1.2.3.4:80") are valid ThreatFox IOC types.
+              // For URLs we query the full URL; for domains/IPs we query as-is.
+              const tfHeaders = { "Content-Type": "application/json" };
+              if (abusechKey) tfHeaders["Auth-Key"] = abusechKey;
+
+              const tfResp = await fetch("https://threatfox-api.abuse.ch/api/v1/", {
+                method: "POST",
+                headers: tfHeaders,
+                body: JSON.stringify({ query: "search_ioc", search_term: value })
+              });
+              const tfData = await tfResp.json();
+
+              if (tfData.query_status === "ok" && tfData.data && tfData.data.length > 0) {
+                // Shape the response for the frontend — pick the most useful fields
+                results.threatfox = {
+                  found: true,
+                  iocs: tfData.data.map(ioc => ({
+                    id:               ioc.id,
+                    ioc:              ioc.ioc,
+                    ioc_type:         ioc.ioc_type,
+                    threat_type:      ioc.threat_type,
+                    threat_type_desc: ioc.threat_type_desc,
+                    malware:          ioc.malware,
+                    malware_printable: ioc.malware_printable,
+                    malware_alias:    ioc.malware_alias,
+                    malware_malpedia: ioc.malware_malpedia,
+                    confidence_level: ioc.confidence_level,
+                    first_seen:       ioc.first_seen,
+                    last_seen:        ioc.last_seen,
+                    reporter:         ioc.reporter,
+                    reference:        ioc.reference,
+                    tags:             ioc.tags || []
+                  }))
+                };
+              } else if (tfData.query_status === "no_result") {
+                results.threatfox = { found: false };
+              } else {
+                results.threatfox = { error: tfData.query_status || "ThreatFox error" };
+              }
+            } catch (err) {
+              results.threatfox = { error: err.message };
+            }
+          })()
+        );
+      }
+
+      // ── URLHAUS — malware URL / host / hash lookup ────────────────────────
+      // URLhaus bulk API: POST to https://urlhaus-api.abuse.ch/v1/
+      // Endpoints: /url/ (lookup by URL), /host/ (by IP or domain), /payload/ (by hash)
+      if (type === "url" || type === "domain" || type === "ip" || type === "hash") {
+        fastPromises.push(
+          (async () => {
+            try {
+              const uhHeaders = { "Content-Type": "application/x-www-form-urlencoded" };
+              if (abusechKey) uhHeaders["Auth-Key"] = abusechKey;
+
+              let uhEndpoint = "";
+              let uhBody = "";
+
+              if (type === "url") {
+                uhEndpoint = "https://urlhaus-api.abuse.ch/v1/url/";
+                uhBody = `url=${encodeURIComponent(value)}`;
+              } else if (type === "domain" || type === "ip") {
+                uhEndpoint = "https://urlhaus-api.abuse.ch/v1/host/";
+                // For domains: use base domain; for IPs: use as-is
+                const host = type === "domain" ? extractBaseDomain(value) : value;
+                uhBody = `host=${encodeURIComponent(host)}`;
+              } else if (type === "hash") {
+                uhEndpoint = "https://urlhaus-api.abuse.ch/v1/payload/";
+                // URLhaus accepts both md5 and sha256 — detect by length
+                const hashField = value.length === 32 ? "md5_hash" : "sha256_hash";
+                uhBody = `${hashField}=${encodeURIComponent(value)}`;
+              }
+
+              const uhResp = await fetch(uhEndpoint, {
+                method: "POST",
+                headers: uhHeaders,
+                body: uhBody
+              });
+              const uhData = await uhResp.json();
+
+              if (uhData.query_status === "ok" || uhData.query_status === "is_host") {
+                results.urlhaus = {
+                  found: true,
+                  query_status:   uhData.query_status,
+                  urlhaus_ref:    uhData.urlhaus_reference || null,
+                  url_status:     uhData.url_status || null,
+                  threat:         uhData.threat || null,
+                  date_added:     uhData.date_added || null,
+                  tags:           uhData.tags || [],
+                  blacklists:     uhData.blacklists || {},
+                  // For host lookups — list of associated malware URLs
+                  urls:           (uhData.urls || []).slice(0, 10).map(u => ({
+                    url:        u.url,
+                    url_status: u.url_status,
+                    threat:     u.threat,
+                    date_added: u.date_added,
+                    tags:       u.tags || []
+                  })),
+                  // For hash lookups — payload details
+                  file_type:      uhData.file_type || null,
+                  file_size:      uhData.file_size || null,
+                  md5_hash:       uhData.md5_hash || null,
+                  sha256_hash:    uhData.sha256_hash || null,
+                  signature:      uhData.signature || null
+                };
+              } else if (uhData.query_status === "no_results") {
+                results.urlhaus = { found: false };
+              } else {
+                results.urlhaus_lookup = { error: uhData.query_status || "URLhaus error" };
+              }
+            } catch (err) {
+              results.urlhaus = { error: err.message };
+            }
+          })()
+        );
+      }
+
+      // ── MALWAREBAZAAR — hash lookup (hashes only) ─────────────────────────
+      if (type === "hash") {
+        fastPromises.push(
+          (async () => {
+            try {
+              const mbHeaders = { "Content-Type": "application/x-www-form-urlencoded" };
+              if (abusechKey) mbHeaders["Auth-Key"] = abusechKey;
+
+              const mbResp = await fetch("https://mb-api.abuse.ch/api/v1/", {
+                method: "POST",
+                headers: mbHeaders,
+                body: `query=get_info&hash=${encodeURIComponent(value)}`
+              });
+              const mbData = await mbResp.json();
+
+              if (mbData.query_status === "ok" && mbData.data && mbData.data.length > 0) {
+                const sample = mbData.data[0];
+                results.malwarebazaar = {
+                  found:          true,
+                  sha256:         sample.sha256_hash,
+                  md5:            sample.md5_hash,
+                  sha1:           sample.sha1_hash,
+                  file_name:      sample.file_name,
+                  file_size:      sample.file_size,
+                  file_type:      sample.file_type_mime,
+                  file_type_desc: sample.file_type,
+                  malware_family: sample.signature,
+                  tags:           sample.tags || [],
+                  first_seen:     sample.first_seen,
+                  last_seen:      sample.last_seen,
+                  reporter:       sample.reporter,
+                  origin_country: sample.origin_country,
+                  intelligence:   sample.intelligence || {},
+                  vendor_intel:   sample.vendor_intel || {},
+                  bazaar_ref:     `https://bazaar.abuse.ch/sample/${sample.sha256_hash}/`
+                };
+              } else if (mbData.query_status === "hash_not_found") {
+                results.malwarebazaar = { found: false };
+              } else if (mbData.query_status === "no_api_key") {
+                results.malwarebazaar = { error: "abuse.ch Auth-Key required — add it in Settings" };
+              } else if (mbData.query_status === "illegal_hash") {
+                results.malwarebazaar = { error: "Invalid hash format — MalwareBazaar requires MD5, SHA1, or SHA256" };
+              } else {
+                results.malwarebazaar = { error: `MalwareBazaar: ${mbData.query_status || "unknown error"}` };
+              }
+            } catch (err) {
+              results.malwarebazaar = { error: err.message };
+            }
+          })()
+        );
+      }
+
       // Execute fast API calls in parallel (no polling)
       await Promise.all(fastPromises);
 
@@ -329,10 +511,13 @@ export default {
       return json({
         ioc: value,
         type: type,
-        virustotal: results.virustotal || null,
-        abuseipdb: results.abuseipdb || null,
-        urlscan: results.urlscan || null,
-        whois: results.whois || null
+        virustotal:    results.virustotal    || null,
+        abuseipdb:     results.abuseipdb     || null,
+        urlscan:       results.urlscan       || null,
+        whois:         results.whois         || null,
+        threatfox:     results.threatfox     || null,
+        urlhaus:       results.urlhaus       || null,
+        malwarebazaar: results.malwarebazaar || null
       });
 
     } catch (err) {
@@ -397,7 +582,7 @@ function json(data, status = 200) {
       "Content-Type": "application/json",
       "Access-Control-Allow-Origin": "*",
       "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
-      "Access-Control-Allow-Headers": "Content-Type, X-VT-API-Key, X-AbuseIPDB-Key, X-Whois-Key, X-URLScan-Key"
+      "Access-Control-Allow-Headers": "Content-Type, X-VT-API-Key, X-AbuseIPDB-Key, X-Whois-Key, X-URLScan-Key, X-AbuseCH-Key"
     }
   });
 }

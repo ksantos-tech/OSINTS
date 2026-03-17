@@ -4,7 +4,8 @@
 function renderCombinedPanel() {
     const container = document.getElementById('combinedResults');
 
-    if (!currentResults.vt && !currentResults.abuseipdb && !currentResults.whois && !currentResults.urlscan) {
+    if (!currentResults.vt && !currentResults.abuseipdb && !currentResults.whois && !currentResults.urlscan
+        && !currentResults.threatfox && !currentResults.urlhaus && !currentResults.malwarebazaar) {
         container.innerHTML = `
             <div class="empty-state-modern">
                 <div class="empty-icon">🔍</div>
@@ -50,11 +51,37 @@ function renderCombinedPanel() {
         domainAge = Math.floor((now - creationDate) / (1000 * 60 * 60 * 24));
     }
 
+    // ── abuse.ch signals ────────────────────────────────────────────────────
+    let threatfoxFound = false;
+    let threatfoxMalware = '';
+    let threatfoxConfidence = 0;
+    if (currentResults.threatfox && currentResults.threatfox.found && currentResults.threatfox.iocs && currentResults.threatfox.iocs.length > 0) {
+        threatfoxFound = true;
+        threatfoxMalware = currentResults.threatfox.iocs[0].malware_printable || currentResults.threatfox.iocs[0].malware || '';
+        threatfoxConfidence = currentResults.threatfox.iocs[0].confidence_level || 0;
+    }
+
+    let urlhausFound = false;
+    let urlhausOnline = false;
+    let urlhausThreat = '';
+    if (currentResults.urlhaus && currentResults.urlhaus.found) {
+        urlhausFound = true;
+        urlhausOnline = currentResults.urlhaus.url_status === 'online';
+        urlhausThreat = currentResults.urlhaus.threat || '';
+    }
+
+    let mbFound = false;
+    let mbFamily = '';
+    if (currentResults.malwarebazaar && currentResults.malwarebazaar.found) {
+        mbFound = true;
+        mbFamily = currentResults.malwarebazaar.malware_family || 'Unknown';
+    }
+
     // Determine verdict based on priority order
     let verdictCategory = '';
     let verdictClass = '';
     
-    if (urlscanMalicious) {
+    if (urlscanMalicious || (threatfoxFound && threatfoxConfidence >= 75) || urlhausOnline || mbFound) {
         verdictCategory = 'MALICIOUS';
         verdictClass = 'high';
     } else if (vtMalicious > 5) {
@@ -66,7 +93,7 @@ function renderCombinedPanel() {
     } else if (vtMalicious >= 3 && vtMalicious <= 5) {
         verdictCategory = 'SUSPICIOUS';
         verdictClass = 'suspicious';
-    } else if (urlscanSuspicious) {
+    } else if (urlscanSuspicious || (threatfoxFound && threatfoxConfidence >= 50) || urlhausFound) {
         verdictCategory = 'SUSPICIOUS';
         verdictClass = 'suspicious';
     } else if (domainAge !== null && domainAge < 180) {
@@ -127,6 +154,27 @@ function renderCombinedPanel() {
         if (urlscanMalicious) {
             riskSignals.push({ icon: '✗', text: 'URLScan: Malicious verdict', color: 'red' });
         }
+    }
+
+    // ThreatFox signals
+    if (threatfoxFound) {
+        riskSignals.push({ icon: '✗', text: `ThreatFox: ${threatfoxMalware || 'Malware'} (${threatfoxConfidence}% confidence)`, color: threatfoxConfidence >= 75 ? 'red' : 'yellow' });
+    } else if (currentResults.threatfox && !currentResults.threatfox.error) {
+        positiveSignals.push({ icon: '✓', text: 'ThreatFox: No IOC matches', color: 'green' });
+    }
+
+    // URLhaus signals
+    if (urlhausFound) {
+        riskSignals.push({ icon: '✗', text: `URLhaus: ${urlhausThreat || 'Malware distribution'} — ${currentResults.urlhaus.url_status || 'known'}`, color: urlhausOnline ? 'red' : 'yellow' });
+    } else if (currentResults.urlhaus && !currentResults.urlhaus.error) {
+        positiveSignals.push({ icon: '✓', text: 'URLhaus: Not listed as malware distributor', color: 'green' });
+    }
+
+    // MalwareBazaar signals
+    if (mbFound) {
+        riskSignals.push({ icon: '✗', text: `MalwareBazaar: Known malware — ${mbFamily}`, color: 'red' });
+    } else if (currentResults.malwarebazaar && !currentResults.malwarebazaar.error) {
+        positiveSignals.push({ icon: '✓', text: 'MalwareBazaar: Hash not in malware database', color: 'green' });
     }
 
     // Determine colors based on verdict
@@ -534,6 +582,32 @@ function renderCombinedPanel() {
                                     return `<div class="evidence-value">${domainAge}d</div><div class="evidence-detail ${conf}">${status}</div>`;
                                 })() : '<div class="evidence-value">-</div><div class="evidence-detail gray">No data</div>'}
                             </div>
+                            <!-- ThreatFox -->
+                            <div class="evidence-item">
+                                <div class="evidence-source">🦊 ThreatFox</div>
+                                ${currentResults.threatfox && !currentResults.threatfox.error ? (() => {
+                                    if (!currentResults.threatfox.found) return '<div class="evidence-value">✓</div><div class="evidence-detail green">CLEAN</div>';
+                                    const col = threatfoxConfidence >= 75 ? 'red' : 'yellow';
+                                    return `<div class="evidence-value">${threatfoxConfidence}%</div><div class="evidence-detail ${col}">${threatfoxMalware || 'MALWARE'}</div>`;
+                                })() : '<div class="evidence-value">-</div><div class="evidence-detail gray">No data</div>'}
+                            </div>
+                            <!-- URLhaus -->
+                            <div class="evidence-item">
+                                <div class="evidence-source">🔴 URLhaus</div>
+                                ${currentResults.urlhaus && !currentResults.urlhaus.error ? (() => {
+                                    if (!currentResults.urlhaus.found) return '<div class="evidence-value">✓</div><div class="evidence-detail green">CLEAN</div>';
+                                    const col = urlhausOnline ? 'red' : 'yellow';
+                                    return `<div class="evidence-value">${currentResults.urlhaus.url_status || 'listed'}</div><div class="evidence-detail ${col}">${urlhausThreat || 'MALWARE'}</div>`;
+                                })() : '<div class="evidence-value">-</div><div class="evidence-detail gray">No data</div>'}
+                            </div>
+                            <!-- MalwareBazaar -->
+                            <div class="evidence-item">
+                                <div class="evidence-source">☣️ MalwareBazaar</div>
+                                ${currentResults.malwarebazaar && !currentResults.malwarebazaar.error ? (() => {
+                                    if (!currentResults.malwarebazaar.found) return '<div class="evidence-value">✓</div><div class="evidence-detail green">CLEAN</div>';
+                                    return `<div class="evidence-value">☣️</div><div class="evidence-detail red">${mbFamily || 'MALWARE'}</div>`;
+                                })() : '<div class="evidence-value">-</div><div class="evidence-detail gray">No data</div>'}
+                            </div>
                         </div>
                     </div>
                 </div>
@@ -578,4 +652,379 @@ function toggleSocCardPanel(cardId) {
         body.classList.toggle('collapsed');
         toggle.classList.toggle('collapsed');
     }
+}
+
+// ─── ThreatFox render ────────────────────────────────────────────────────────
+function renderThreatFox(data) {
+    const container = document.getElementById('threatfoxResults');
+    const emptyEl   = document.getElementById('threatfoxEmpty');
+    if (!container) return;
+    if (emptyEl) emptyEl.style.display = 'none';
+
+    if (!data || data.error) {
+        container.innerHTML = `<div class="error-message">${data?.error || 'ThreatFox data unavailable'}</div>`;
+        return;
+    }
+
+    if (!data.found) {
+        container.innerHTML = `
+            <div class="empty-state" style="padding:40px;text-align:center;">
+                <div style="font-size:36px;margin-bottom:12px;">✅</div>
+                <h3 style="color:var(--color-success,#3fb950);margin-bottom:8px;">Not found in ThreatFox</h3>
+                <p style="color:var(--text-muted);">This IOC has no known ThreatFox entries.</p>
+            </div>`;
+        return;
+    }
+
+    const iocs = data.iocs || [];
+    const first = iocs[0] || {};
+
+    // Confidence badge colour
+    const conf = first.confidence_level || 0;
+    const confColor = conf >= 75 ? 'var(--color-danger,#f85149)'
+                    : conf >= 50 ? 'var(--color-warning,#d29922)'
+                    : 'var(--color-success,#3fb950)';
+
+    // Build rows for each matched IOC
+    const rows = iocs.map(ioc => {
+        const tags = (ioc.tags || []).map(t => `<span class="ioc-tag">${t}</span>`).join('');
+        const conf = ioc.confidence_level || 0;
+        const confCol = conf >= 75 ? '#f85149' : conf >= 50 ? '#d29922' : '#3fb950';
+        return `
+            <tr>
+                <td style="font-family:monospace;font-size:12px;word-break:break-all;">${ioc.ioc || '-'}</td>
+                <td><span class="category-badge ${ioc.ioc_type || ''}">${ioc.ioc_type || '-'}</span></td>
+                <td><span class="category-badge malicious">${ioc.threat_type || '-'}</span></td>
+                <td style="max-width:160px;">${ioc.malware_printable || ioc.malware || '-'}</td>
+                <td><span style="color:${confCol};font-weight:700;">${conf}%</span></td>
+                <td>${ioc.first_seen ? ioc.first_seen.split(' ')[0] : '-'}</td>
+                <td>${tags || '<span style="color:var(--text-muted)">—</span>'}</td>
+                <td>${ioc.reference
+                    ? `<a href="${ioc.reference}" target="_blank" style="color:var(--accent-blue);font-size:11px;">↗ ref</a>`
+                    : '-'}</td>
+            </tr>`;
+    }).join('');
+
+    // Malware aliases / Malpedia link for first hit
+    const aliasHtml = first.malware_alias
+        ? first.malware_alias.split(',').map(a => `<span class="ioc-tag">${a.trim()}</span>`).join(' ')
+        : '<span style="color:var(--text-muted)">None</span>';
+
+    const malpediaHtml = first.malware_malpedia
+        ? `<a href="${first.malware_malpedia}" target="_blank" style="color:var(--accent-blue);">
+               ${first.malware_malpedia.split('/').pop()} ↗</a>`
+        : '<span style="color:var(--text-muted)">N/A</span>';
+
+    container.innerHTML = `
+        <!-- Summary banner -->
+        <div class="result-card" style="border-left:4px solid #f85149;margin-bottom:16px;">
+            <div class="card-body" style="display:flex;flex-wrap:wrap;gap:24px;align-items:center;">
+                <div style="text-align:center;min-width:80px;">
+                    <div style="font-size:32px;font-weight:800;color:#f85149;">${iocs.length}</div>
+                    <div style="font-size:11px;color:var(--text-muted);text-transform:uppercase;">ThreatFox Hits</div>
+                </div>
+                <div style="flex:1;min-width:200px;">
+                    <div style="margin-bottom:6px;">
+                        <span style="color:var(--text-muted);font-size:11px;">THREAT TYPE</span><br>
+                        <span style="font-weight:600;color:var(--text-primary);">${first.threat_type_desc || first.threat_type || '-'}</span>
+                    </div>
+                    <div>
+                        <span style="color:var(--text-muted);font-size:11px;">MALWARE FAMILY</span><br>
+                        <span style="font-weight:600;color:#f85149;">${first.malware_printable || first.malware || 'Unknown'}</span>
+                    </div>
+                </div>
+                <div style="flex:1;min-width:200px;">
+                    <div style="margin-bottom:6px;">
+                        <span style="color:var(--text-muted);font-size:11px;">CONFIDENCE</span><br>
+                        <span style="font-weight:800;font-size:20px;color:${confColor};">${conf}%</span>
+                    </div>
+                    <div>
+                        <span style="color:var(--text-muted);font-size:11px;">FIRST SEEN</span><br>
+                        <span style="color:var(--text-primary);">${first.first_seen ? first.first_seen.split(' ')[0] : '-'}</span>
+                    </div>
+                </div>
+                <div style="flex:1;min-width:200px;">
+                    <div style="margin-bottom:6px;">
+                        <span style="color:var(--text-muted);font-size:11px;">ALIASES</span><br>
+                        <div style="margin-top:4px;">${aliasHtml}</div>
+                    </div>
+                    <div>
+                        <span style="color:var(--text-muted);font-size:11px;">MALPEDIA</span><br>
+                        ${malpediaHtml}
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- IOC table -->
+        <div class="result-card">
+            <div class="card-header" onclick="toggleCard(this)">
+                <h3>🦊 ThreatFox IOC Matches (${iocs.length})</h3>
+                <span>▼</span>
+            </div>
+            <div class="card-body" style="overflow-x:auto;">
+                <table class="data-table">
+                    <thead>
+                        <tr>
+                            <th>IOC Value</th>
+                            <th>Type</th>
+                            <th>Threat</th>
+                            <th>Malware</th>
+                            <th>Confidence</th>
+                            <th>First Seen</th>
+                            <th>Tags</th>
+                            <th>Ref</th>
+                        </tr>
+                    </thead>
+                    <tbody>${rows}</tbody>
+                </table>
+            </div>
+        </div>`;
+}
+
+// ─── URLhaus render ──────────────────────────────────────────────────────────
+function renderURLhaus(data) {
+    const container = document.getElementById('urlhausResults');
+    const emptyEl   = document.getElementById('urlhausEmpty');
+    if (!container) return;
+    if (emptyEl) emptyEl.style.display = 'none';
+
+    if (!data || data.error) {
+        container.innerHTML = `<div class="error-message">${data?.error || 'URLhaus data unavailable'}</div>`;
+        return;
+    }
+
+    if (!data.found) {
+        container.innerHTML = `
+            <div class="empty-state" style="padding:40px;text-align:center;">
+                <div style="font-size:36px;margin-bottom:12px;">✅</div>
+                <h3 style="color:var(--color-success,#3fb950);margin-bottom:8px;">Not found in URLhaus</h3>
+                <p style="color:var(--text-muted);">This IOC has no known URLhaus malware distribution entries.</p>
+            </div>`;
+        return;
+    }
+
+    // Status colour
+    const statusColor = data.url_status === 'online'  ? '#f85149'
+                      : data.url_status === 'offline' ? '#3fb950'
+                      : 'var(--text-muted)';
+
+    // Blacklist badges
+    const blHtml = Object.entries(data.blacklists || {}).map(([bl, status]) => {
+        const listed = status === 'listed';
+        return `<span class="category-badge ${listed ? 'malicious' : 'undetected'}"
+                      title="${bl}">${bl.replace('surbl_', '').replace('_', ' ')}: ${status}</span>`;
+    }).join(' ') || '<span style="color:var(--text-muted)">None checked</span>';
+
+    // Tags
+    const tagHtml = (data.tags || []).map(t => `<span class="ioc-tag">${t}</span>`).join(' ')
+                  || '<span style="color:var(--text-muted)">None</span>';
+
+    // Associated URLs table (for host/IP lookups)
+    const urlRows = (data.urls || []).map(u => {
+        const uColor = u.url_status === 'online' ? '#f85149' : '#3fb950';
+        const uTags = (u.tags || []).map(t => `<span class="ioc-tag" style="font-size:10px;">${t}</span>`).join(' ');
+        return `
+            <tr>
+                <td style="font-family:monospace;font-size:11px;word-break:break-all;max-width:300px;">${u.url || '-'}</td>
+                <td><span style="color:${uColor};font-weight:700;">${u.url_status || '-'}</span></td>
+                <td>${u.threat || '-'}</td>
+                <td>${u.date_added ? u.date_added.split(' ')[0] : '-'}</td>
+                <td>${uTags || '-'}</td>
+            </tr>`;
+    }).join('');
+
+    const urlsSection = urlRows ? `
+        <div class="result-card" style="margin-top:16px;">
+            <div class="card-header" onclick="toggleCard(this)">
+                <h3>🔗 Associated Malware URLs (${data.urls.length})</h3>
+                <span>▼</span>
+            </div>
+            <div class="card-body" style="overflow-x:auto;">
+                <table class="data-table">
+                    <thead><tr><th>URL</th><th>Status</th><th>Threat</th><th>Date Added</th><th>Tags</th></tr></thead>
+                    <tbody>${urlRows}</tbody>
+                </table>
+            </div>
+        </div>` : '';
+
+    // Payload section (hash lookups)
+    const payloadSection = data.sha256_hash ? `
+        <div class="result-card" style="margin-top:16px;">
+            <div class="card-header" onclick="toggleCard(this)">
+                <h3>📦 Payload Details</h3>
+                <span>▼</span>
+            </div>
+            <div class="card-body">
+                <table class="data-table">
+                    <tr><th>File Type</th><td>${data.file_type || 'N/A'}</td></tr>
+                    <tr><th>File Size</th><td>${data.file_size ? (data.file_size / 1024).toFixed(1) + ' KB' : 'N/A'}</td></tr>
+                    <tr><th>MD5</th><td style="font-family:monospace;">${data.md5_hash || 'N/A'}</td></tr>
+                    <tr><th>SHA256</th><td style="font-family:monospace;word-break:break-all;">${data.sha256_hash || 'N/A'}</td></tr>
+                    <tr><th>Signature</th><td>${data.signature || 'N/A'}</td></tr>
+                </table>
+            </div>
+        </div>` : '';
+
+    container.innerHTML = `
+        <!-- Summary -->
+        <div class="result-card" style="border-left:4px solid ${statusColor};margin-bottom:16px;">
+            <div class="card-body" style="display:flex;flex-wrap:wrap;gap:24px;align-items:center;">
+                <div style="text-align:center;min-width:80px;">
+                    <div style="font-size:28px;">🔴</div>
+                    <div style="font-size:20px;font-weight:800;color:${statusColor};text-transform:uppercase;">
+                        ${data.url_status || 'Found'}
+                    </div>
+                    <div style="font-size:11px;color:var(--text-muted);">URL STATUS</div>
+                </div>
+                <div style="flex:1;min-width:200px;">
+                    <div style="margin-bottom:8px;">
+                        <span style="color:var(--text-muted);font-size:11px;">THREAT TYPE</span><br>
+                        <span style="font-weight:600;color:#f85149;">${data.threat || 'Unknown'}</span>
+                    </div>
+                    <div>
+                        <span style="color:var(--text-muted);font-size:11px;">DATE ADDED</span><br>
+                        <span>${data.date_added ? data.date_added.split(' ')[0] : 'N/A'}</span>
+                    </div>
+                </div>
+                <div style="flex:1;min-width:200px;">
+                    <div style="margin-bottom:8px;">
+                        <span style="color:var(--text-muted);font-size:11px;">TAGS</span><br>
+                        <div style="margin-top:4px;">${tagHtml}</div>
+                    </div>
+                    <div>
+                        <span style="color:var(--text-muted);font-size:11px;">BLACKLISTS</span><br>
+                        <div style="margin-top:4px;">${blHtml}</div>
+                    </div>
+                </div>
+                ${data.urlhaus_ref ? `
+                <div>
+                    <a href="${data.urlhaus_ref}" target="_blank"
+                       style="color:var(--accent-blue);font-size:13px;">View on URLhaus ↗</a>
+                </div>` : ''}
+            </div>
+        </div>
+        ${urlsSection}
+        ${payloadSection}`;
+}
+
+// ─── MalwareBazaar render ────────────────────────────────────────────────────
+function renderMalwareBazaar(data) {
+    const container = document.getElementById('malwarebazaarResults');
+    const emptyEl   = document.getElementById('malwarebazaarEmpty');
+    if (!container) return;
+    if (emptyEl) emptyEl.style.display = 'none';
+
+    if (!data || data.error) {
+        container.innerHTML = `<div class="error-message">${data?.error || 'MalwareBazaar data unavailable'}</div>`;
+        return;
+    }
+
+    if (!data.found) {
+        container.innerHTML = `
+            <div class="empty-state" style="padding:40px;text-align:center;">
+                <div style="font-size:36px;margin-bottom:12px;">✅</div>
+                <h3 style="color:var(--color-success,#3fb950);margin-bottom:8px;">Not found in MalwareBazaar</h3>
+                <p style="color:var(--text-muted);">This hash has no MalwareBazaar sample entry.</p>
+            </div>`;
+        return;
+    }
+
+    const tagHtml = (data.tags || []).map(t => `<span class="ioc-tag">${t}</span>`).join(' ')
+                  || '<span style="color:var(--text-muted)">None</span>';
+
+    // Vendor intel table
+    const vendorRows = Object.entries(data.vendor_intel || {}).map(([vendor, info]) => {
+        const det = info.detection || info.result || 'Detected';
+        return `<tr><td>${vendor}</td><td style="color:#f85149;font-weight:600;">${det}</td></tr>`;
+    }).join('');
+
+    const vendorSection = vendorRows ? `
+        <div class="result-card" style="margin-top:16px;">
+            <div class="card-header" onclick="toggleCard(this)">
+                <h3>🛡️ Vendor Intelligence</h3><span>▼</span>
+            </div>
+            <div class="card-body" style="overflow-x:auto;">
+                <table class="data-table">
+                    <thead><tr><th>Vendor</th><th>Detection</th></tr></thead>
+                    <tbody>${vendorRows}</tbody>
+                </table>
+            </div>
+        </div>` : '';
+
+    container.innerHTML = `
+        <!-- Summary -->
+        <div class="result-card" style="border-left:4px solid #f85149;margin-bottom:16px;">
+            <div class="card-body" style="display:flex;flex-wrap:wrap;gap:24px;align-items:flex-start;">
+                <div style="text-align:center;min-width:80px;">
+                    <div style="font-size:36px;">☣️</div>
+                    <div style="font-size:13px;font-weight:700;color:#f85149;margin-top:4px;">MALWARE</div>
+                </div>
+                <div style="flex:1;min-width:180px;">
+                    <div style="margin-bottom:8px;">
+                        <span style="color:var(--text-muted);font-size:11px;">MALWARE FAMILY</span><br>
+                        <span style="font-weight:700;font-size:16px;color:#f85149;">${data.malware_family || 'Unknown'}</span>
+                    </div>
+                    <div style="margin-bottom:8px;">
+                        <span style="color:var(--text-muted);font-size:11px;">FILE NAME</span><br>
+                        <span style="font-family:monospace;">${data.file_name || 'N/A'}</span>
+                    </div>
+                    <div>
+                        <span style="color:var(--text-muted);font-size:11px;">TAGS</span><br>
+                        <div style="margin-top:4px;">${tagHtml}</div>
+                    </div>
+                </div>
+                <div style="flex:1;min-width:180px;">
+                    <div style="margin-bottom:8px;">
+                        <span style="color:var(--text-muted);font-size:11px;">FILE TYPE</span><br>
+                        <span>${data.file_type_desc || data.file_type || 'N/A'}</span>
+                    </div>
+                    <div style="margin-bottom:8px;">
+                        <span style="color:var(--text-muted);font-size:11px;">FILE SIZE</span><br>
+                        <span>${data.file_size ? (data.file_size / 1024).toFixed(1) + ' KB' : 'N/A'}</span>
+                    </div>
+                    <div>
+                        <span style="color:var(--text-muted);font-size:11px;">ORIGIN COUNTRY</span><br>
+                        <span>${data.origin_country || 'Unknown'}</span>
+                    </div>
+                </div>
+                <div style="flex:1;min-width:180px;">
+                    <div style="margin-bottom:8px;">
+                        <span style="color:var(--text-muted);font-size:11px;">FIRST SEEN</span><br>
+                        <span>${data.first_seen ? data.first_seen.split(' ')[0] : 'N/A'}</span>
+                    </div>
+                    <div style="margin-bottom:8px;">
+                        <span style="color:var(--text-muted);font-size:11px;">LAST SEEN</span><br>
+                        <span>${data.last_seen ? data.last_seen.split(' ')[0] : 'N/A'}</span>
+                    </div>
+                    <div>
+                        <span style="color:var(--text-muted);font-size:11px;">REPORTER</span><br>
+                        <span>${data.reporter || 'N/A'}</span>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Hashes -->
+        <div class="result-card" style="margin-bottom:16px;">
+            <div class="card-header" onclick="toggleCard(this)">
+                <h3>#️⃣ Hash Values</h3><span>▼</span>
+            </div>
+            <div class="card-body">
+                <table class="data-table">
+                    <tr><th style="width:80px;">MD5</th>
+                        <td style="font-family:monospace;word-break:break-all;">${data.md5 || 'N/A'}</td></tr>
+                    <tr><th>SHA1</th>
+                        <td style="font-family:monospace;word-break:break-all;">${data.sha1 || 'N/A'}</td></tr>
+                    <tr><th>SHA256</th>
+                        <td style="font-family:monospace;word-break:break-all;">${data.sha256 || 'N/A'}</td></tr>
+                </table>
+                ${data.bazaar_ref
+                    ? `<div style="margin-top:12px;">
+                           <a href="${data.bazaar_ref}" target="_blank"
+                              style="color:var(--accent-blue);">View full sample on MalwareBazaar ↗</a>
+                       </div>` : ''}
+            </div>
+        </div>
+        ${vendorSection}`;
 }

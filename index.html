@@ -40,6 +40,8 @@
                 <span>WHOIS</span>
                 <span class="status-dot" id="urlscanStatus"></span>
                 <span>URLScan</span>
+                <span class="status-dot" id="abusechStatus"></span>
+                <span>AbuseCH</span>
             </div>
             <button class="btn" onclick="openSettings()">
                 <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
@@ -127,8 +129,11 @@
                 <button class="tab-btn" data-tab="abuseipdb" onclick="switchTab('abuseipdb')"> AbuseIPDB</button>
                 <button class="tab-btn" data-tab="whois" onclick="switchTab('whois')"> WHOIS</button>
                 <button class="tab-btn" data-tab="urlscan" onclick="switchTab('urlscan')"> URLScan</button>
-                <button class="tab-btn" data-tab="combined" onclick="switchTab('combined')"> Combined Results & Analysis</button>
-                <button class="tab-btn bulk-tab" data-tab="bulk" onclick="switchTab('bulk')" style="display:none;"> Bulk (<span id="bulk-tab-count">0</span>)</button>
+                <button class="tab-btn" data-tab="threatfox" onclick="switchTab('threatfox')">🦊 ThreatFox</button>
+                <button class="tab-btn" data-tab="urlhaus" onclick="switchTab('urlhaus')">🔴 URLhaus</button>
+                <button class="tab-btn" data-tab="malwarebazaar" onclick="switchTab('malwarebazaar')">☣️ MalwareBazaar</button>
+                <button class="tab-btn" data-tab="combined" onclick="switchTab('combined')"> Combined Results &amp; Analysis</button>
+                <div id="bulkScanBtn" style="display:none; cursor:pointer; align-items:center;" onclick="switchTab('bulk')"></div>
                 <button class="tab-btn" data-tab="ipquery" onclick="switchTab('ipquery')"> Quick Query</button>
                 <button class="tab-btn" data-tab="notes" onclick="switchTab('notes')"> Notes</button>
             </div>
@@ -173,9 +178,36 @@
                 <div id="urlscanResults"></div>
             </div>
 
+            <div id="threatfoxTab" class="tab-content">
+                <div class="empty-state" id="threatfoxEmpty">
+                    <span style="font-size:36px;">🦊</span>
+                    <span>Enter an IOC and click Scan to query ThreatFox</span>
+                </div>
+                <div id="threatfoxResults"></div>
+            </div>
+
+            <div id="urlhausTab" class="tab-content">
+                <div class="empty-state" id="urlhausEmpty">
+                    <span style="font-size:36px;">🔴</span>
+                    <span>Enter a URL, IP, domain, or hash to query URLhaus</span>
+                </div>
+                <div id="urlhausResults"></div>
+            </div>
+
+            <div id="malwarebazaarTab" class="tab-content">
+                <div class="empty-state" id="malwarebazaarEmpty">
+                    <span style="font-size:36px;">☣️</span>
+                    <span>Enter a file hash (MD5/SHA256) to query MalwareBazaar</span>
+                </div>
+                <div id="malwarebazaarResults"></div>
+            </div>
+
             <div id="combinedTab" class="tab-content">
                 <div id="combinedResults"></div>
             </div>
+
+            <!-- Bulk results tab — rendered by renderBulkResults() / renderBulkProgress() -->
+            <div id="bulkTab" class="tab-content"></div>
 
             <div id="ipqueryTab" class="tab-content">
                 <div class="ip-query-section">
@@ -448,6 +480,11 @@ Use timestamps to track events. Press Ctrl+3 for quick timestamp."
                     <input type="password" id="urlscanApiKey" placeholder="Enter your URLScan.io API key">
                     <small style="color: var(--text-muted);">Get your key from <a href="https://urlscan.io/dashboard/" target="_blank" style="color: var(--accent-blue);">urlscan.io</a></small>
                 </div>
+                <div class="input-group">
+                    <label>abuse.ch Auth-Key <span style="color:var(--accent-blue);font-size:11px;">(ThreatFox · URLhaus · MalwareBazaar)</span></label>
+                    <input type="password" id="abusechApiKey" placeholder="Enter your abuse.ch Auth-Key">
+                    <small style="color: var(--text-muted);">One key for all three — free at <a href="https://auth.abuse.ch/" target="_blank" style="color: var(--accent-blue);">auth.abuse.ch</a></small>
+                </div>
             </div>
             <div class="modal-footer">
                 <button class="btn" onclick="clearKeys()">Clear Keys</button>
@@ -544,6 +581,46 @@ Use timestamps to track events. Press Ctrl+3 for quick timestamp."
         </div>
     </footer>
 
+    <style>
+        /* ── Bulk Scan Button (BSB) ─────────────────────────────────── */
+        .bsb-idle {
+            display:inline-flex; align-items:center; gap:7px;
+            background:var(--bg-secondary,#161b22); border:1px solid #388bfd;
+            border-radius:7px; padding:6px 14px; color:#58a6ff;
+            font-size:13px; font-weight:500; font-family:inherit;
+            white-space:nowrap; cursor:pointer; transition:background 0.15s;
+        }
+        .bsb-idle:hover { background:#1c2333; }
+        @keyframes bsbSonar {
+            0%   { transform:scale(0.6); opacity:0.9; }
+            100% { transform:scale(2.4); opacity:0; }
+        }
+        .bsb-scanning {
+            display:inline-flex; flex-direction:column;
+            background:#0d1117; border:1px solid #1f6feb;
+            border-radius:8px; overflow:hidden; min-width:210px; cursor:pointer;
+        }
+        .bsb-scan-top { display:flex; align-items:center; gap:8px; padding:7px 13px 5px; }
+        .bsb-sonar { position:relative; width:18px; height:18px; flex-shrink:0; }
+        .bsb-sonar-dot { position:absolute; top:5px; left:5px; width:8px; height:8px; border-radius:50%; background:#58a6ff; }
+        .bsb-sonar-ring { position:absolute; inset:0; border-radius:50%; border:1.5px solid #388bfd; animation:bsbSonar 1.4s ease-out infinite; }
+        .bsb-sonar-ring:nth-child(2) { animation-delay:0.5s; }
+        .bsb-scan-text { flex:1; min-width:0; }
+        .bsb-scan-title { font-size:12px; font-weight:500; color:#e6edf3; line-height:1.2; }
+        .bsb-scan-ioc { font-size:10px; color:#58a6ff; font-family:'JetBrains Mono',monospace; line-height:1.3; overflow:hidden; text-overflow:ellipsis; max-width:130px; }
+        .bsb-scan-pct { font-size:13px; font-weight:500; font-family:'JetBrains Mono',monospace; color:#79c0ff; flex-shrink:0; }
+        .bsb-bar-track { height:3px; background:#21262d; }
+        @keyframes bsbShimmer { 0% { transform:translateX(-24px); } 100% { transform:translateX(0); } }
+        .bsb-bar-fill { height:100%; background:linear-gradient(90deg,#1f6feb,#58a6ff); border-radius:0 2px 2px 0; transition:width 0.35s ease; position:relative; overflow:hidden; }
+        .bsb-bar-fill::after { content:''; position:absolute; top:0; right:0; width:24px; height:100%; background:linear-gradient(90deg,transparent,rgba(255,255,255,0.45)); animation:bsbShimmer 1.1s ease-in-out infinite; }
+        .bsb-scan-footer { display:flex; justify-content:space-between; padding:4px 13px 6px; font-size:10px; font-family:'JetBrains Mono',monospace; color:#6e7681; }
+        .bsb-scan-footer span { color:#8b949e; }
+        .bsb-done { display:inline-flex; align-items:center; gap:7px; background:#0f2b0f; border:1px solid #238636; border-radius:7px; padding:6px 14px; color:#3fb950; font-size:13px; font-weight:500; white-space:nowrap; cursor:pointer; font-family:inherit; }
+        .bsb-check { width:16px; height:16px; border-radius:50%; background:#238636; display:flex; align-items:center; justify-content:center; flex-shrink:0; }
+        .bsb-done-text { display:flex; flex-direction:column; gap:1px; }
+        .bsb-done-label { font-size:12px; color:#3fb950; font-weight:500; }
+        .bsb-done-sub { font-size:10px; color:#2ea043; font-family:'JetBrains Mono',monospace; }
+    </style>
     <script src="js/urlscan-poller.js"></script>
     <script src="js/threat-engine.js"></script>
     <script src="js/ui-panels.js"></script>
