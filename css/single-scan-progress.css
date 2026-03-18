@@ -1,0 +1,284 @@
+/* Single Scan Progress Indicator */
+.single-scan-progress {
+    background: var(--card-bg, #1a1f2e);
+    border: 1px solid var(--border, #2a3140);
+    border-radius: 12px;
+    padding: 20px;
+    margin-bottom: 20px;
+    animation: slideDown 0.3s ease;
+}
+
+@keyframes slideDown {
+    from {
+        opacity: 0;
+        transform: translateY(-10px);
+    }
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
+
+.progress-header-bar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 16px;
+}
+
+.progress-title {
+    font-size: 16px;
+    font-weight: 600;
+    color: var(--text-primary, #e5e7eb);
+    font-family: 'JetBrains Mono', monospace;
+}
+
+.progress-counter {
+    font-size: 14px;
+    color: var(--text-muted, #9ca3af);
+    font-family: 'JetBrains Mono', monospace;
+}
+
+.progress-counter span {
+    font-weight: 700;
+}
+
+.progress-counter #progressCompleted {
+    color: var(--accent-blue, #3b82f6);
+}
+
+.progress-sources-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+    gap: 12px;
+}
+
+.progress-source-card {
+    background: var(--bg-secondary, #0f1419);
+    border: 1px solid var(--border, #2a3140);
+    border-radius: 8px;
+    padding: 12px 14px;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    transition: all 0.3s ease;
+    animation: fadeInCard 0.4s ease both;
+}
+
+@keyframes fadeInCard {
+    from {
+        opacity: 0;
+        transform: scale(0.95);
+    }
+    to {
+        opacity: 1;
+        transform: scale(1);
+    }
+}
+
+/* State-specific styles */
+.progress-source-card.pending {
+    border-color: var(--border, #2a3140);
+}
+
+.progress-source-card.scanning {
+    border-color: var(--accent-blue, #3b82f6);
+    background: linear-gradient(135deg, rgba(59, 130, 246, 0.1) 0%, transparent 100%);
+}
+
+.progress-source-card.success {
+    border-color: var(--accent-green, #10b981);
+    background: linear-gradient(135deg, rgba(16, 185, 129, 0.08) 0%, transparent 100%);
+}
+
+.progress-source-card.threat {
+    border-color: var(--accent-red, #ef4444);
+    background: linear-gradient(135deg, rgba(239, 68, 68, 0.1) 0%, transparent 100%);
+}
+
+.progress-source-card.error {
+    border-color: var(--text-muted, #6b7280);
+    background: linear-gradient(135deg, rgba(107, 114, 128, 0.05) 0%, transparent 100%);
+}
+
+.progress-source-card.skipped {
+    opacity: 0.5;
+    border-color: var(--border, #2a3140);
+}
+
+/* Icon circle */
+.progress-source-icon {
+    width: 36px;
+    height: 36px;
+    border-radius: 8px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-weight: 700;
+    font-size: 14px;
+    font-family: 'JetBrains Mono', monospace;
+    flex-shrink: 0;
+    transition: all 0.3s ease;
+}
+
+.progress-source-card.pending .progress-source-icon {
+    background: var(--border, #2a3140);
+    color: var(--text-muted, #6b7280);
+}
+
+.progress-source-card.scanning .progress-source-icon {
+    background: var(--accent-blue, #3b82f6);
+    color: white;
+    animation: pulse 2s ease infinite;
+}
+
+.progress-source-card.success .progress-source-icon {
+    background: var(--accent-green, #10b981);
+    color: white;
+}
+
+.progress-source-card.threat .progress-source-icon {
+    background: var(--accent-red, #ef4444);
+    color: white;
+}
+
+.progress-source-card.error .progress-source-icon {
+    background: var(--text-muted, #6b7280);
+    color: white;
+}
+
+.progress-source-card.skipped .progress-source-icon {
+    background: var(--border, #2a3140);
+    color: var(--text-dim, #4b5563);
+}
+
+@keyframes pulse {
+    0%, 100% {
+        transform: scale(1);
+    }
+    50% {
+        transform: scale(1.08);
+    }
+}
+
+/* Info section */
+.progress-source-info {
+    flex: 1;
+    min-width: 0;
+}
+
+.progress-source-name {
+    font-weight: 600;
+    font-size: 13px;
+    margin-bottom: 4px;
+    color: var(--text-primary, #e5e7eb);
+    font-family: 'JetBrains Mono', monospace;
+}
+
+.progress-source-status {
+    font-size: 11px;
+    color: var(--text-muted, #9ca3af);
+}
+
+.progress-source-card.scanning .progress-source-status {
+    color: var(--accent-blue, #3b82f6);
+}
+
+.progress-source-card.success .progress-source-status {
+    color: var(--accent-green, #10b981);
+}
+
+.progress-source-card.threat .progress-source-status {
+    color: var(--accent-red, #ef4444);
+    font-weight: 600;
+}
+
+.progress-source-card.error .progress-source-status {
+    color: var(--text-muted, #9ca3af);
+}
+
+/* Badge */
+.progress-source-badge {
+    padding: 4px 10px;
+    border-radius: 6px;
+    font-size: 10px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    flex-shrink: 0;
+    font-family: 'JetBrains Mono', monospace;
+}
+
+.progress-source-card.pending .progress-source-badge {
+    background: var(--border, #2a3140);
+    color: var(--text-muted, #9ca3af);
+}
+
+.progress-source-card.scanning .progress-source-badge {
+    background: var(--accent-blue, #3b82f6);
+    color: white;
+}
+
+.progress-source-card.success .progress-source-badge {
+    background: var(--accent-green, #10b981);
+    color: white;
+}
+
+.progress-source-card.threat .progress-source-badge {
+    background: var(--accent-red, #ef4444);
+    color: white;
+}
+
+.progress-source-card.error .progress-source-badge {
+    background: var(--text-muted, #6b7280);
+    color: white;
+}
+
+.progress-source-card.skipped .progress-source-badge {
+    background: var(--border, #2a3140);
+    color: var(--text-dim, #6b7280);
+}
+
+/* Spinner animation for scanning state */
+.progress-spinner {
+    width: 14px;
+    height: 14px;
+    border: 2px solid rgba(255, 255, 255, 0.2);
+    border-top-color: white;
+    border-radius: 50%;
+    animation: spin 0.8s linear infinite;
+    flex-shrink: 0;
+}
+
+@keyframes spin {
+    to {
+        transform: rotate(360deg);
+    }
+}
+
+/* Light theme support */
+[data-theme="light"] .single-scan-progress {
+    background: #ffffff;
+    border-color: #e5e7eb;
+}
+
+[data-theme="light"] .progress-source-card {
+    background: #f9fafb;
+    border-color: #e5e7eb;
+}
+
+[data-theme="light"] .progress-title {
+    color: #111827;
+}
+
+[data-theme="light"] .progress-counter {
+    color: #6b7280;
+}
+
+[data-theme="light"] .progress-source-name {
+    color: #111827;
+}
+
+[data-theme="light"] .progress-source-status {
+    color: #6b7280;
+}

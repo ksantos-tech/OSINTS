@@ -1698,12 +1698,15 @@ Date:
             showLoading('whois');
             showLoading('urlscan');
 
+            // Show per-source progress tracker
+            sspShow(['vt','abuseipdb','whois','urlscan','threatfox','urlhaus','malwarebazaar']);
+            ['vt','abuseipdb','whois','urlscan','threatfox','urlhaus','malwarebazaar'].forEach(k => sspSetStatus(k, 'loading'));
+
             // Update export bar
             const exportBar = document.getElementById('exportBar');
             if (exportBar) exportBar.style.display = 'flex';
 
             // Use Worker API to aggregate all threat intelligence lookups
-            // This avoids CORS issues and protects API keys
             await scanViaWorker(ioc, type);
             
             // Render combined view if active
@@ -2538,6 +2541,85 @@ Date:
             // kept as no-op — BSB handles its own display
         }
 
+        // ── Single Scan Progress (SSP) tracker ───────────────────────────────
+        //
+        // Shows a compact per-source checklist below the Investigate button.
+        // States: pending | loading | done | error | skipped
+        //
+        const SSP_SOURCES = [
+            { key: 'vt',            label: 'VirusTotal',    icon: '🛡️' },
+            { key: 'abuseipdb',     label: 'AbuseIPDB',     icon: '🌐' },
+            { key: 'whois',         label: 'WHOIS',         icon: '📋' },
+            { key: 'urlscan',       label: 'URLScan',       icon: '🔍' },
+            { key: 'threatfox',     label: 'ThreatFox',     icon: '🦊' },
+            { key: 'urlhaus',       label: 'URLhaus',       icon: '🔴' },
+            { key: 'malwarebazaar', label: 'MalwareBazaar', icon: '☣️' },
+        ];
+
+        let _sspState = {};
+        let _sspAutoHideTimer = null;
+
+        function sspShow(sourceKeys) {
+            clearTimeout(_sspAutoHideTimer);
+            _sspState = {};
+            sourceKeys.forEach(k => { _sspState[k] = 'pending'; });
+
+            const wrap = document.getElementById('singleScanProgress');
+            const list = document.getElementById('sspSources');
+            if (!wrap || !list) return;
+
+            list.innerHTML = SSP_SOURCES
+                .filter(s => sourceKeys.includes(s.key))
+                .map(s => `
+                    <div id="ssp_row_${s.key}" style="display:flex;align-items:center;gap:8px;">
+                        <span id="ssp_icon_${s.key}" style="width:16px;text-align:center;font-size:13px;">${s.icon}</span>
+                        <span style="flex:1;font-size:12px;color:var(--text-secondary);">${s.label}</span>
+                        <span id="ssp_badge_${s.key}" class="ssp-badge ssp-pending">Queued</span>
+                    </div>`).join('');
+
+            wrap.style.display = 'block';
+            sspRefreshSummary(sourceKeys);
+        }
+
+        function sspSetStatus(key, status, detail) {
+            _sspState[key] = status;
+            const badge = document.getElementById(`ssp_badge_${key}`);
+            if (!badge) return;
+
+            const map = {
+                loading:  { cls: 'ssp-loading',  text: 'Scanning…' },
+                done:     { cls: 'ssp-done',      text: detail || 'Done' },
+                error:    { cls: 'ssp-error',     text: detail || 'Error' },
+                skipped:  { cls: 'ssp-skipped',   text: detail || 'N/A' },
+                pending:  { cls: 'ssp-pending',   text: 'Queued' },
+            };
+            const cfg = map[status] || map.pending;
+            badge.className = `ssp-badge ${cfg.cls}`;
+            badge.textContent = cfg.text;
+
+            const allKeys = Object.keys(_sspState);
+            sspRefreshSummary(allKeys);
+
+            const allDone = allKeys.every(k => ['done','error','skipped'].includes(_sspState[k]));
+            if (allDone) {
+                _sspAutoHideTimer = setTimeout(sspHide, 4000);
+            }
+        }
+
+        function sspRefreshSummary(keys) {
+            const el = document.getElementById('sspSummary');
+            if (!el) return;
+            const done    = keys.filter(k => _sspState[k] === 'done').length;
+            const total   = keys.filter(k => _sspState[k] !== 'skipped').length;
+            const loading = keys.some(k => _sspState[k] === 'loading');
+            el.textContent = loading ? `${done}/${total} complete` : `${done}/${total} complete`;
+        }
+
+        function sspHide() {
+            const wrap = document.getElementById('singleScanProgress');
+            if (wrap) wrap.style.display = 'none';
+        }
+
         // ── Bulk Scan Button (BSB) state helpers ──────────────────────────
         function bsbSetIdle() {
             const el = document.getElementById('bulkScanBtn');
@@ -3286,7 +3368,7 @@ Date:
             showToast(msg, 'error');
         }
 
-        // Worker API endpoint - routes through Cloudflare Worker to avoid CORS and protect API keys
+        // Worker API endpoint — routes through Cloudflare Worker to protect API keys
         const WORKER_API_URL = 'https://threatanalyzer-api.juanlunadevelop.workers.dev';
         
         // Scan via Worker API - aggregates all threat intelligence lookups
@@ -3305,10 +3387,11 @@ Date:
                     method: 'GET',
                     headers: {
                         'Accept': 'application/json',
-                        'X-VT-API-Key': keys.vt || '',
+                        'X-VT-API-Key':    keys.vt       || '',
                         'X-AbuseIPDB-Key': keys.abuseipdb || '',
-                        'X-Whois-Key': keys.whois || '',
-                        'X-URLScan-Key': keys.urlscan || ''
+                        'X-Whois-Key':     keys.whois    || '',
+                        'X-URLScan-Key':   keys.urlscan  || '',
+                        'X-AbuseCH-Key':   keys.abusech  || ''
                     }
                 });
                 
@@ -3341,10 +3424,16 @@ Date:
                             ? data.virustotal.error
                             : (data.virustotal.error.message || JSON.stringify(data.virustotal.error));
                         showError('vt', vtErrMsg);
+                        sspSetStatus('vt', 'error', 'Error');
                     } else {
                         currentResults.vt = data.virustotal;
                         renderVirusTotal(data.virustotal);
+                        const vtStats = data.virustotal?.data?.attributes?.last_analysis_stats;
+                        const vtMal = vtStats ? ((vtStats.malicious||0)+(vtStats.suspicious||0)) : 0;
+                        sspSetStatus('vt', 'done', vtMal > 0 ? `${vtMal} hit${vtMal>1?'s':''}` : 'Clean');
                     }
+                } else {
+                    sspSetStatus('vt', 'skipped');
                 }
                 
                 // Process AbuseIPDB results
@@ -3359,10 +3448,15 @@ Date:
                             ? abuseData.error
                             : (abuseData.error.message || JSON.stringify(abuseData.error));
                         showError('abuseipdb', abuseErrMsg);
+                        sspSetStatus('abuseipdb', 'error', 'Error');
                     } else {
                         currentResults.abuseipdb = abuseData;
                         renderAbuseIPDB(abuseData);
+                        const score = abuseData.abuseConfidenceScore;
+                        sspSetStatus('abuseipdb', 'done', score != null ? `${score}% abuse` : 'Done');
                     }
+                } else {
+                    sspSetStatus('abuseipdb', 'skipped');
                 }
                 
                 // Process WHOIS results
@@ -3373,23 +3467,36 @@ Date:
                             ? data.whois.error
                             : (data.whois.error.message || 'No WHOIS data available');
                         showError('whois', whoisErrMsg);
+                        sspSetStatus('whois', 'error', 'Error');
                     } else {
                         // Worker may return { result: {...} } or the unwrapped result directly
                         const whoisData = data.whois.result || data.whois;
                         currentResults.whois = whoisData;
                         renderWhois(whoisData);
+                        const regDate = whoisData.creation_date;
+                        if (regDate) {
+                            const ageDays = Math.floor((Date.now() - new Date(regDate)) / 86400000);
+                            sspSetStatus('whois', 'done', ageDays < 30 ? `${ageDays}d old ⚠` : `${Math.floor(ageDays/365)}yr old`);
+                        } else {
+                            sspSetStatus('whois', 'done', 'Done');
+                        }
                     }
+                } else {
+                    sspSetStatus('whois', 'skipped');
                 }
                 
                 // Process URLScan results
                 if (data.urlscan) {
                     if (data.urlscan.error) {
                         showError('urlscan', data.urlscan.error);
+                        sspSetStatus('urlscan', 'error', 'Error');
 
                     } else if (data.urlscan.status === 'pending' && data.urlscan.uuid) {
                         // Worker returned pending — poll Worker /urlscan/result every 2s
                         // (urlscan docs: poll every 2s after initial 10s wait)
                         const pendingUuid = data.urlscan.uuid;
+
+                        sspSetStatus('urlscan', 'loading', 'Polling…');
 
                         const uc = document.getElementById('urlscanResults');
                         if (uc) uc.innerHTML = `<div class="loading">
@@ -3411,6 +3518,7 @@ Date:
 
                             for (let i = 1; i <= 60; i++) { // 60 x 2s = 2 min max
                                 setMsg(`Fetching URLScan result… (${i})`);
+                                sspSetStatus('urlscan', 'loading', `Polling ${i}/60`);
                                 try {
                                     // Route through Worker — it adds API-Key server-side
                                     const workerUrl = WORKER_API_URL +
@@ -3428,10 +3536,15 @@ Date:
                                             await sleep(2000); continue;
                                         }
                                         if (result.error) {
-                                            showError('urlscan', result.error); return;
+                                            showError('urlscan', result.error);
+                                            sspSetStatus('urlscan', 'error', 'Error');
+                                            return;
                                         }
                                         currentResults.urlscan = result;
                                         renderURLScan(result);
+                                        const usMal = result?.verdicts?.overall?.malicious;
+                                        const usScore = result?.verdicts?.overall?.score ?? 0;
+                                        sspSetStatus('urlscan', 'done', usMal ? 'Malicious' : usScore > 0 ? `Score ${usScore}` : 'Clean');
                                         try {
                                             if (typeof updateReputationGrid === 'function')
                                                 updateReputationGrid(currentResults.vt, currentResults.abuseipdb, currentResults.whois, result);
@@ -3442,8 +3555,10 @@ Date:
 
                                     await sleep(2000);
                                 } catch (e) {
-                                    if (i >= 60) showError('urlscan', 'URLScan polling failed: ' + e.message);
-                                    else await sleep(2000);
+                                    if (i >= 60) {
+                                        showError('urlscan', 'URLScan polling failed: ' + e.message);
+                                        sspSetStatus('urlscan', 'error', 'Timeout');
+                                    } else await sleep(2000);
                                 }
                             }
 
@@ -3451,15 +3566,58 @@ Date:
                                 `Scan still processing. ` +
                                 `<a href="https://urlscan.io/result/${pendingUuid}/" target="_blank" ` +
                                 `style="color:var(--accent-blue)">View on urlscan.io ↗</a>`);
+                            sspSetStatus('urlscan', 'error', 'Timeout');
                         })();
 
                     } else {
                         // Complete result — render directly
                         currentResults.urlscan = data.urlscan;
                         renderURLScan(data.urlscan);
+                        const usMal = data.urlscan?.verdicts?.overall?.malicious;
+                        const usScore = data.urlscan?.verdicts?.overall?.score ?? 0;
+                        sspSetStatus('urlscan', 'done', usMal ? 'Malicious' : usScore > 0 ? `Score ${usScore}` : 'Clean');
                     }
+                } else {
+                    sspSetStatus('urlscan', 'skipped');
                 }
                 
+                // Process ThreatFox / URLhaus / MalwareBazaar (abuse.ch sources)
+                if (data.threatfox) {
+                    currentResults.threatfox = data.threatfox;
+                    if (typeof renderThreatFox === 'function') renderThreatFox(data.threatfox);
+                    if (data.threatfox.error) {
+                        sspSetStatus('threatfox', 'error', 'Error');
+                    } else {
+                        sspSetStatus('threatfox', 'done', data.threatfox.found ? '⚠ Found' : 'Clean');
+                    }
+                } else {
+                    sspSetStatus('threatfox', 'skipped');
+                }
+
+                if (data.urlhaus) {
+                    currentResults.urlhaus = data.urlhaus;
+                    if (typeof renderURLhaus === 'function') renderURLhaus(data.urlhaus);
+                    if (data.urlhaus.error) {
+                        sspSetStatus('urlhaus', 'error', 'Error');
+                    } else {
+                        sspSetStatus('urlhaus', 'done', data.urlhaus.found ? '⚠ Found' : 'Clean');
+                    }
+                } else {
+                    sspSetStatus('urlhaus', 'skipped');
+                }
+
+                if (data.malwarebazaar) {
+                    currentResults.malwarebazaar = data.malwarebazaar;
+                    if (typeof renderMalwareBazaar === 'function') renderMalwareBazaar(data.malwarebazaar);
+                    if (data.malwarebazaar.error) {
+                        sspSetStatus('malwarebazaar', 'error', 'Error');
+                    } else {
+                        sspSetStatus('malwarebazaar', 'done', data.malwarebazaar.found ? `⚠ ${data.malwarebazaar.malware_family || 'Found'}` : 'Clean');
+                    }
+                } else {
+                    sspSetStatus('malwarebazaar', 'skipped');
+                }
+
                 // Update combined view
                 const combinedContainer = document.getElementById('combinedResults');
                 if (combinedContainer) {
@@ -3500,6 +3658,10 @@ Date:
                 showError('abuseipdb', 'Worker API unavailable - ' + error.message);
                 showError('whois', 'Worker API unavailable - ' + error.message);
                 showError('urlscan', 'Worker API unavailable - ' + error.message);
+
+                // Mark all SSP sources as failed
+                ['vt','abuseipdb','whois','urlscan','threatfox','urlhaus','malwarebazaar']
+                    .forEach(k => sspSetStatus(k, 'error', 'Failed'));
                 
                 throw error;
             }

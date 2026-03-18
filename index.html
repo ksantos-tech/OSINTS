@@ -96,6 +96,15 @@
                 Investigate
             </button>
 
+            <!-- Single Scan Progress Tracker -->
+            <div id="singleScanProgress" style="display:none; margin-top:10px; background:var(--bg-secondary,#161b22); border:1px solid var(--border-color,#30363d); border-radius:8px; padding:10px 12px;">
+                <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:8px;">
+                    <span style="font-size:11px; font-weight:600; color:var(--text-muted); letter-spacing:.05em; text-transform:uppercase;">Intelligence Sources</span>
+                    <span id="sspSummary" style="font-size:11px; color:var(--text-muted);"></span>
+                </div>
+                <div id="sspSources" style="display:flex; flex-direction:column; gap:5px;"></div>
+            </div>
+
             <!-- Workspace Actions -->
             <div class="workspace-actions" style="display: flex; gap: 8px; margin-top: 12px; flex-wrap: wrap;">
                 <button class="btn btn-secondary" onclick="addToWorkspace()" style="flex: 1; min-width: 80px; font-size: 11px; padding: 6px 8px;" title="Add current IOC to workspace">
@@ -620,6 +629,26 @@ Use timestamps to track events. Press Ctrl+3 for quick timestamp."
         .bsb-done-text { display:flex; flex-direction:column; gap:1px; }
         .bsb-done-label { font-size:12px; color:#3fb950; font-weight:500; }
         .bsb-done-sub { font-size:10px; color:#2ea043; font-family:'JetBrains Mono',monospace; }
+        /* ── Single Scan Progress (SSP) badges ─────────────────────────── */
+        .ssp-badge {
+            font-size: 10px;
+            font-weight: 600;
+            padding: 2px 7px;
+            border-radius: 10px;
+            font-family: 'JetBrains Mono', monospace;
+            white-space: nowrap;
+            letter-spacing: .02em;
+            transition: background .2s, color .2s;
+        }
+        .ssp-pending  { background: #21262d; color: #6e7681; }
+        .ssp-loading  { background: #0d2a4a; color: #58a6ff; animation: sspPulse 1.2s ease-in-out infinite; }
+        .ssp-done     { background: #0f2b0f; color: #3fb950; border: 1px solid #238636; }
+        .ssp-error    { background: #2d1117; color: #f85149; border: 1px solid #6e1a1a; }
+        .ssp-skipped  { background: #161b22; color: #484f58; }
+        @keyframes sspPulse {
+            0%, 100% { opacity: 1; }
+            50%       { opacity: 0.55; }
+        }
     </style>
     <script src="js/urlscan-poller.js"></script>
     <script src="js/threat-engine.js"></script>

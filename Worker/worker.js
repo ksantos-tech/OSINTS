@@ -5,7 +5,8 @@
  *   GET /scan?value=<ioc>          — main aggregator (VT + AbuseIPDB + WHOIS + URLScan)
  *   GET /urlscan/result?uuid=<id>  — poll a pending URLScan result
  *
- * All API keys are passed from the browser via custom request headers:
+ * API keys are forwarded from the browser via custom request headers — no CORS
+ * handling needed since the Worker is the sole origin for all outbound calls:
  *   X-VT-API-Key       → VirusTotal
  *   X-AbuseIPDB-Key    → AbuseIPDB
  *   X-Whois-Key        → APILayer WHOIS
@@ -15,7 +16,7 @@
 
 const CORS_HEADERS = {
   'Access-Control-Allow-Origin': '*',
-  'Access-Control-Allow-Methods': 'GET, OPTIONS',
+  'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
   'Access-Control-Allow-Headers':
     'Accept, Content-Type, X-VT-API-Key, X-AbuseIPDB-Key, X-Whois-Key, X-URLScan-Key, X-AbuseCH-Key',
 };
@@ -24,7 +25,7 @@ const CORS_HEADERS = {
 
 export default {
   async fetch(request, env) {
-    // Handle CORS pre-flight
+    // Handle CORS preflight — required when index.html is served from file:// or a different origin
     if (request.method === 'OPTIONS') {
       return new Response(null, { status: 204, headers: CORS_HEADERS });
     }
@@ -372,7 +373,10 @@ async function fetchMalwareBazaar(value, type, apiKey) {
   try {
     const resp = await fetch('https://mb-api.abuse.ch/api/v1/', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      headers: {
+        'Content-Type': 'application/x-www-form-urlencoded',
+        'Auth-Key': apiKey,
+      },
       body: `query=get_info&hash=${encodeURIComponent(value)}`,
     });
 
@@ -380,7 +384,10 @@ async function fetchMalwareBazaar(value, type, apiKey) {
 
     const data = await resp.json();
 
-    if (data.query_status === 'hash_not_found') return { found: false };
+    if (data.query_status === 'hash_not_found')   return { found: false };
+    if (data.query_status === 'illegal_hash')      return { found: false, error: 'Invalid hash format' };
+    if (data.query_status === 'no_api_key')        return { found: false, error: 'MalwareBazaar API key missing' };
+    if (data.query_status === 'user_blacklisted')  return { found: false, error: 'MalwareBazaar API key blacklisted' };
 
     return {
       found: true,
@@ -425,9 +432,6 @@ function detectIOCType(value) {
 function jsonResponse(data, status = 200) {
   return new Response(JSON.stringify(data), {
     status,
-    headers: {
-      ...CORS_HEADERS,
-      'Content-Type': 'application/json',
-    },
+    headers: { ...CORS_HEADERS, 'Content-Type': 'application/json' },
   });
 }
