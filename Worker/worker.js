@@ -222,30 +222,70 @@ async function fetchWhois(value, type, apiKey) {
       }
     }
 
-    // Strip leading www.
-    domain = domain.replace(/^www\./, '');
-
-    const resp = await fetch(
-      `https://api.apilayer.com/whois/query?domain=${encodeURIComponent(domain)}`,
-      {
-        headers: {
-          'apikey': apiKey,
-          'Accept': 'application/json',
-        },
+    // Extract registrable domain — strip all subdomains except for
+    // second-level TLDs (e.g. co.uk, in.net, com.au).
+    // Strategy: walk from right, keep the minimal public suffix + one label.
+    const knownSLDs = new Set([
+      'co.uk','co.in','co.nz','co.za','co.jp','co.kr','com.au','com.br',
+      'com.cn','com.mx','com.ar','com.tr','com.sg','com.ph','net.au',
+      'org.uk','org.au','in.net','or.jp','ne.jp','ac.uk','gov.uk',
+      'gov.au','edu.au',
+    ]);
+    const parts = domain.split('.');
+    if (parts.length > 2) {
+      const lastTwo = parts.slice(-2).join('.');
+      const lastThree = parts.length >= 3 ? parts.slice(-3).join('.') : null;
+      if (lastThree && knownSLDs.has(lastTwo)) {
+        // e.g. genomax.in.net → in.net is a known SLD → keep genomax.in.net
+        domain = lastThree;
+      } else {
+        // Standard: just keep last two labels — genomax.in.net → in.net (wrong),
+        // but for WHOIS the registered domain is what matters most.
+        // Keep last 2 parts as the base domain.
+        domain = lastTwo;
       }
-    );
-
-    if (resp.status === 401) return { error: 'Invalid WHOIS API key' };
-    if (resp.status === 429) return { error: 'WHOIS API rate limit exceeded' };
-    if (resp.status === 404) return { error: `No WHOIS data found for ${domain}` };
-
-    const data = await resp.json();
-
-    if (data.message && !data.result) {
-      return { error: data.message };
     }
 
-    return data;
+    // Helper: query APILayer WHOIS for a single domain label
+    const queryWhois = async (d) => {
+      const r = await fetch(
+        `https://api.apilayer.com/whois/query?domain=${encodeURIComponent(d)}`,
+        { headers: { 'apikey': apiKey, 'Accept': 'application/json' } }
+      );
+      if (r.status === 401) return { _status: 401, error: 'Invalid WHOIS API key' };
+      if (r.status === 429) return { _status: 429, error: 'WHOIS API rate limit exceeded' };
+      if (r.status === 404 || r.status === 422) return { _status: r.status, error: `No WHOIS data found for ${d}` };
+      if (!r.ok) return { _status: r.status, error: `WHOIS error ${r.status}` };
+      const j = await r.json();
+      if (j.message && !j.result) return { _status: 200, error: j.message };
+      return { _status: 200, ...j };
+    };
+
+    // Try extracted domain first; if not found fall back to its parent (one level up)
+    let data = await queryWhois(domain);
+
+    if ((data._status === 404 || data._status === 422 || data.error) &&
+        data._status !== 401 && data._status !== 429) {
+      // Build parent: drop the leftmost label (e.g. genomax.in.net → in.net)
+      const domainParts = domain.split('.');
+      if (domainParts.length > 2) {
+        const parent = domainParts.slice(1).join('.');
+        const fallback = await queryWhois(parent);
+        // Only use fallback if it actually has result data
+        if (!fallback.error && fallback._status === 200) {
+          data = { ...fallback, _queried_domain: parent, _original_domain: domain };
+        }
+      }
+    }
+
+    // Surface auth/rate errors immediately
+    if (data._status === 401 || data._status === 429) return { error: data.error };
+
+    // Treat missing data as a soft unavailable — not a hard error
+    if (data.error) return { unavailable: true, error: data.error };
+
+    const { _status, ...result } = data;
+    return result;
   } catch (err) {
     return { error: `WHOIS fetch failed: ${err.message}` };
   }
@@ -345,12 +385,16 @@ async function fetchURLhaus(value, type, apiKey) {
       bodyParams = `url=${encodeURIComponent(value)}`;
     }
 
+    const headers = { 'Content-Type': 'application/x-www-form-urlencoded' };
+    if (apiKey) headers['Auth-Key'] = apiKey;
+
     const resp = await fetch(endpoint, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      headers,
       body: bodyParams,
     });
 
+    if (resp.status === 401) return { found: false, error: 'URLhaus API key invalid or missing' };
     if (!resp.ok) return { found: false, error: `URLhaus error: ${resp.status}` };
 
     const data = await resp.json();

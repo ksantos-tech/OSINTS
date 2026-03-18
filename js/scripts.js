@@ -3461,8 +3461,19 @@ Date:
                 
                 // Process WHOIS results
                 if (data.whois) {
-                    if (data.whois.error) {
-                        // error may be an object; Worker may fail to extract domain from a URL IOC
+                    if (data.whois.unavailable) {
+                        // Soft unavailable — domain not in WHOIS registry, not an API error
+                        const whoisPanel = document.getElementById('whoisResults');
+                        if (whoisPanel) whoisPanel.innerHTML = `
+                            <div class="empty-state" style="padding:32px;text-align:center;">
+                                <div style="font-size:32px;margin-bottom:8px;">📋</div>
+                                <p style="color:var(--text-muted);font-size:13px;">${data.whois.error || 'No WHOIS data available for this domain.'}</p>
+                            </div>`;
+                        const whoisEmpty = document.getElementById('whoisEmpty');
+                        if (whoisEmpty) whoisEmpty.style.display = 'none';
+                        sspSetStatus('whois', 'skipped', 'No data');
+                    } else if (data.whois.error) {
+                        // Hard error — API key issue, rate limit, etc.
                         const whoisErrMsg = typeof data.whois.error === 'string'
                             ? data.whois.error
                             : (data.whois.error.message || 'No WHOIS data available');
