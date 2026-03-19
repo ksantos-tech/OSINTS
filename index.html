@@ -71,6 +71,13 @@
         </div>
     </header>
 
+    <!-- Demo Mode Banner (outside grid so it doesn't break layout) -->
+    <div id="demoBanner" style="display:none; background:linear-gradient(90deg,rgba(255,193,7,.15),rgba(255,152,0,.1)); border:1px solid rgba(255,193,7,.4); border-bottom: none; padding:9px 20px; align-items:center; gap:10px; font-size:12px; color:#ffc107;">
+        <span style="font-size:15px;">🎬</span>
+        <span><strong>DEMO MODE ACTIVE</strong> — Results are simulated. No API keys required. <span id="demoBannerIOC" style="color:#e6edf3; font-family:'JetBrains Mono',monospace;"></span></span>
+        <button onclick="toggleDemoMode()" style="margin-left:auto; background:none; border:1px solid rgba(255,193,7,.4); color:#ffc107; border-radius:4px; padding:3px 10px; cursor:pointer; font-size:11px; font-family:inherit;">✕ Exit Demo</button>
+    </div>
+
     <!-- Main Container -->
     <div class="main-container">
         <!-- Toast Container -->
@@ -101,6 +108,13 @@
                     <path d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19l-4.99-5zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14z"/>
                 </svg>
                 Investigate
+            </button>
+
+            <!-- Demo Mode Button -->
+            <button class="btn demo-mode-btn" id="demoModeBtn" onclick="toggleDemoMode()" title="Run a simulated scan with realistic data — no API keys needed" style="width:100%; margin-top:6px; background:linear-gradient(135deg,rgba(255,193,7,.14),rgba(255,152,0,.10)); border:1px solid rgba(255,193,7,.45); color:#ffc107; font-weight:600; display:flex; align-items:center; justify-content:center; gap:7px; position:relative; overflow:hidden;">
+                <svg width="15" height="15" viewBox="0 0 24 24" fill="currentColor"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-2 14.5v-9l6 4.5-6 4.5z"/></svg>
+                Try Demo Mode
+                <span style="font-size:9px; background:rgba(255,193,7,.2); border:1px solid rgba(255,193,7,.4); border-radius:3px; padding:1px 5px; letter-spacing:.05em;">NO API KEY</span>
             </button>
 
             <!-- Single Scan Progress Tracker -->
@@ -978,6 +992,873 @@ Use timestamps to track events. Press Ctrl+3 for quick timestamp."
     <script src="js/threat-engine.js"></script>
     <script src="js/ui-panels.js"></script>
     <script src="js/scripts.js"></script>
+
+    <!-- ═══════════════════════════════════════════════════════════════
+         DEMO MODE — Simulated scan results, no API keys needed
+         ═══════════════════════════════════════════════════════════════ -->
+    <script>
+    (function() {
+        /* ── State ─────────────────────────────── */
+        let demoActive = false;
+
+        /* ── Sample IOCs for each mode ─────────── */
+        const DEMO_SINGLE_IOC  = '185.220.101.47';
+        const DEMO_SINGLE_TYPE = 'ip';
+        const DEMO_BULK_IOCS   = [
+            '185.220.101.47',
+            'malware-dropper.ru',
+            'http://phish-kit.xyz/login.php',
+            'a3b4c5d6e7f8a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6e7f8a1b2c3d4e5f601',
+            '45.33.32.156',
+            'evil-botnet-c2.com',
+            '193.106.191.162',
+            'ransomware-stage2.onion.ws'
+        ];
+
+        /* ── Expose toggle globally ─────────────── */
+        window.toggleDemoMode = function() {
+            demoActive ? exitDemo() : launchDemoChooser();
+        };
+
+        /* ── Chooser: ask single or bulk ─────────── */
+        function launchDemoChooser() {
+            // Remove any existing chooser
+            const old = document.getElementById('demoChooserOverlay');
+            if (old) old.remove();
+
+            const overlay = document.createElement('div');
+            overlay.id = 'demoChooserOverlay';
+            overlay.innerHTML = `
+                <div id="demoChooserBox">
+                    <div style="font-size:28px; margin-bottom:8px;">🎬</div>
+                    <h3 style="margin:0 0 6px; font-size:17px; color:#e6edf3;">Demo Mode</h3>
+                    <p style="margin:0 0 20px; font-size:12px; color:#8b949e; line-height:1.6;">Run a fully simulated scan with realistic threat-intel data.<br>No API keys required.</p>
+                    <div style="display:flex; flex-direction:column; gap:10px;">
+                        <button class="demo-choice-btn" onclick="window._demoRunSingle()">
+                            <span style="font-size:20px;">🔍</span>
+                            <div>
+                                <div style="font-weight:600; font-size:13px; color:#e6edf3;">Single IOC Scan</div>
+                                <div style="font-size:11px; color:#8b949e; margin-top:2px;">Scan <code style="color:#58a6ff;">${DEMO_SINGLE_IOC}</code> across all intelligence sources</div>
+                            </div>
+                        </button>
+                        <button class="demo-choice-btn" onclick="window._demoRunBulk()">
+                            <span style="font-size:20px;">📋</span>
+                            <div>
+                                <div style="font-weight:600; font-size:13px; color:#e6edf3;">Bulk IOC Scan</div>
+                                <div style="font-size:11px; color:#8b949e; margin-top:2px;">Scan ${DEMO_BULK_IOCS.length} mixed IOCs — IPs, domains, URLs, hashes</div>
+                            </div>
+                        </button>
+                    </div>
+                    <button onclick="document.getElementById('demoChooserOverlay').remove()" style="margin-top:16px; background:none; border:none; color:#6e7681; cursor:pointer; font-size:12px; font-family:inherit;">Cancel</button>
+                </div>`;
+            Object.assign(overlay.style, {
+                position:'fixed', inset:'0', background:'rgba(1,4,9,.82)',
+                display:'flex', alignItems:'center', justifyContent:'center',
+                zIndex:'99999', backdropFilter:'blur(6px)'
+            });
+            document.body.appendChild(overlay);
+
+            // Inject chooser box styles once
+            if (!document.getElementById('demoChooserStyle')) {
+                const s = document.createElement('style');
+                s.id = 'demoChooserStyle';
+                s.textContent = `
+                    #demoChooserBox {
+                        background:#161b22; border:1px solid rgba(255,193,7,.35);
+                        border-radius:12px; padding:28px 32px; text-align:center;
+                        max-width:380px; width:90%; font-family:'JetBrains Mono',monospace;
+                        box-shadow:0 24px 64px rgba(0,0,0,.8);
+                        animation: demoBoxIn .3s cubic-bezier(.34,1.1,.64,1);
+                    }
+                    @keyframes demoBoxIn {
+                        from { opacity:0; transform:scale(.93) translateY(10px); }
+                        to   { opacity:1; transform:scale(1) translateY(0); }
+                    }
+                    .demo-choice-btn {
+                        width:100%; display:flex; align-items:center; gap:14px;
+                        background:var(--bg-tertiary,#21262d); border:1px solid var(--border-color,#30363d);
+                        border-radius:8px; padding:12px 14px; cursor:pointer; text-align:left;
+                        transition:all .15s; font-family:'JetBrains Mono',monospace;
+                    }
+                    .demo-choice-btn:hover { border-color:#ffc107; background:rgba(255,193,7,.08); }
+                    .demo-mode-btn { transition: all .2s; }
+                    .demo-mode-btn.active {
+                        background:linear-gradient(135deg,rgba(255,193,7,.3),rgba(255,152,0,.2)) !important;
+                        border-color:#ffc107 !important; box-shadow:0 0 12px rgba(255,193,7,.3);
+                    }
+                `;
+                document.head.appendChild(s);
+            }
+        }
+
+        /* ── Single scan demo ─────────────────── */
+        window._demoRunSingle = function() {
+            const ov = document.getElementById('demoChooserOverlay');
+            if (ov) ov.remove();
+            demoActive = true;
+
+            // Switch to single mode & fill input
+            if (typeof setScanMode === 'function') setScanMode('single');
+            const inp = document.getElementById('iocInput');
+            const sel = document.getElementById('iocType');
+            if (inp) inp.value = DEMO_SINGLE_IOC;
+            if (sel) sel.value = DEMO_SINGLE_TYPE;
+
+            updateDemoUI(DEMO_SINGLE_IOC);
+            simulateSingleScan();
+        };
+
+        /* ── Bulk scan demo ───────────────────── */
+        window._demoRunBulk = function() {
+            const ov = document.getElementById('demoChooserOverlay');
+            if (ov) ov.remove();
+            demoActive = true;
+
+            if (typeof setScanMode === 'function') setScanMode('bulk');
+            const inp = document.getElementById('iocInput');
+            if (inp) inp.value = DEMO_BULK_IOCS.join('\n');
+
+            updateDemoUI('Bulk · ' + DEMO_BULK_IOCS.length + ' IOCs');
+            simulateBulkScan();
+        };
+
+        /* ── Exit demo ────────────────────────── */
+        function exitDemo() {
+            demoActive = false;
+            removeTourTooltip();
+            const btn  = document.getElementById('demoModeBtn');
+            const banner = document.getElementById('demoBanner');
+            if (btn) btn.classList.remove('active');
+            if (banner) banner.style.display = 'none';
+            showToast('Demo mode exited.', 'info');
+        }
+
+        /* ── Update header UI ─────────────────── */
+        function updateDemoUI(label) {
+            const btn    = document.getElementById('demoModeBtn');
+            const banner = document.getElementById('demoBanner');
+            const bannerIOC = document.getElementById('demoBannerIOC');
+            if (btn)    btn.classList.add('active');
+            if (banner) banner.style.display = 'flex';
+            if (bannerIOC) bannerIOC.textContent = label;
+        }
+
+        /* ── Helper: switch tab reliably ─────── */
+        function switchToTab(name) {
+            // Try the app's own switchTab first
+            if (typeof window.switchTab === 'function') {
+                try { window.switchTab(name); return; } catch(e) {}
+            }
+            // Fallback: manually toggle classes
+            document.querySelectorAll('.tab-btn').forEach(b => {
+                b.classList.toggle('active', b.dataset && b.dataset.tab === name);
+            });
+            document.querySelectorAll('.tab-content').forEach(c => {
+                c.classList.toggle('active', c.id === name + 'Tab');
+            });
+        }
+        function showToast(msg, type) {
+            if (typeof window.showToast === 'function') { window.showToast(msg, type); return; }
+            const c = document.getElementById('toastContainer');
+            if (!c) return;
+            const t = document.createElement('div');
+            t.className = 'toast';
+            t.textContent = msg;
+            Object.assign(t.style, { background: type === 'error' ? '#f85149' : '#ffc107', color:'#000',
+                padding:'8px 14px', borderRadius:'6px', fontSize:'12px', marginBottom:'6px',
+                fontFamily:"'JetBrains Mono',monospace", boxShadow:'0 4px 12px rgba(0,0,0,.4)' });
+            c.appendChild(t);
+            setTimeout(() => t.remove(), 3500);
+        }
+
+        /* ════════════════════════════════════════
+           SINGLE SCAN SIMULATION
+           ════════════════════════════════════════ */
+
+        // Guided tour steps: tab key, friendly name, emoji, analyst tip
+        const GUIDE_STEPS = [
+            { tab:'vt',            name:'VirusTotal',    emoji:'🦠', tip:'Check how many AV engines flagged this IOC. A high detection count (47/94 here) is a strong malicious signal — look at which vendors and what malware family they name.' },
+            { tab:'abuseipdb',     name:'AbuseIPDB',     emoji:'🚨', tip:'Review the community abuse confidence score and the number of reports. 98% with 4,800+ reports means this IP is widely known as malicious — pay attention to the abuse categories like SSH Brute Force or Port Scan.' },
+            { tab:'whois',         name:'WHOIS',         emoji:'📋', tip:'WHOIS tells you who owns the IP or domain. Here the org is "Emerald Onion" — a known Tor exit relay operator. Check the registration date and abuse contact for escalation paths.' },
+            { tab:'urlscan',       name:'URLScan',       emoji:'🌐', tip:'URLScan shows what the URL/IP actually does when visited. Look at the verdict score, flagged indicators, and which external domains or IPs it contacted during the scan.' },
+            { tab:'threatfox',     name:'ThreatFox',     emoji:'🦊', tip:'ThreatFox lists this IOC against known malware campaigns. Two records here link it to Cobalt Strike C2 and TrickBot — these tie the IP to real APT and crimeware operations.' },
+            { tab:'urlhaus',       name:'URLhaus',       emoji:'🔴', tip:'URLhaus tracks active malware distribution URLs. Three live URLs on this IP — including an online Emotet loader — means it\'s actively serving malware. High priority for blocking.' },
+            { tab:'malwarebazaar', name:'MalwareBazaar', emoji:'☣️', tip:'MalwareBazaar indexes malware file samples by hash. Not a direct match for this IP (IPs aren\'t indexed here), but cross-reference hashes dropped from URLhaus findings above.' },
+            { tab:'combined',      name:'Combined Results', emoji:'📊', tip:'The Combined tab gives you a full threat score, a cross-source summary, and the AI-generated analyst narrative. This is your starting point for writing your SOC report.' },
+        ];
+
+        function simulateSingleScan() {
+            switchToTab('vt');
+            showSingleProgress();
+
+            const sources = [
+                { id:'vt',            label:'VirusTotal',    delay:800  },
+                { id:'abuseipdb',     label:'AbuseIPDB',     delay:1300 },
+                { id:'whois',         label:'WHOIS',         delay:1700 },
+                { id:'urlscan',       label:'URLScan',       delay:2100 },
+                { id:'threatfox',     label:'ThreatFox',     delay:2500 },
+                { id:'urlhaus',       label:'URLhaus',       delay:2800 },
+                { id:'malwarebazaar', label:'MalwareBazaar', delay:3100 },
+            ];
+
+            sources.forEach(src => {
+                setTimeout(() => {
+                    markSourceDone(src.id, src.label);
+                    renderSingleTabResult(src.id);
+                }, src.delay);
+            });
+
+            setTimeout(() => {
+                renderCombinedResult();
+                showExportBar();
+                showToast('🎬 Demo scan complete — starting guided tour!', 'success');
+                // Kick off guided walkthrough after a short pause
+                setTimeout(() => startGuidedTour(), 800);
+            }, 3400);
+        }
+
+        /* ── Guided Tour ──────────────────────── */
+        let tourStep = 0;
+
+        function startGuidedTour() {
+            tourStep = 0;
+            injectTourStyles();
+            showTourStep(tourStep);
+        }
+
+        function showTourStep(idx) {
+            removeTourTooltip();
+            if (idx >= GUIDE_STEPS.length) { endTour(); return; }
+
+            const step = GUIDE_STEPS[idx];
+            switchToTab(step.tab);
+
+            // Find the tab button to anchor the tooltip to
+            const tabBtn = [...document.querySelectorAll('.tab-btn')].find(b => b.dataset && b.dataset.tab === step.tab);
+
+            const tip = document.createElement('div');
+            tip.id = 'demoTourTooltip';
+            tip.innerHTML = `
+                <div class="tour-header">
+                    <span class="tour-emoji">${step.emoji}</span>
+                    <span class="tour-source">${step.name}</span>
+                    <span class="tour-counter">${idx + 1} / ${GUIDE_STEPS.length}</span>
+                </div>
+                <p class="tour-tip">${step.tip}</p>
+                <div class="tour-actions">
+                    ${idx > 0 ? `<button class="tour-btn tour-prev" onclick="window._demoTourNav(${idx-1})">← Prev</button>` : '<span></span>'}
+                    <div class="tour-dots">
+                        ${GUIDE_STEPS.map((_,i)=>`<span class="tour-dot${i===idx?' active':''}" onclick="window._demoTourNav(${i})"></span>`).join('')}
+                    </div>
+                    ${idx < GUIDE_STEPS.length - 1
+                        ? `<button class="tour-btn tour-next" onclick="window._demoTourNav(${idx+1})">Next →</button>`
+                        : `<button class="tour-btn tour-finish" onclick="window._demoTourNav(${GUIDE_STEPS.length})">✓ Finish</button>`}
+                </div>
+                <button class="tour-close" onclick="window._demoTourNav(${GUIDE_STEPS.length})" title="Close tour">✕</button>`;
+            document.body.appendChild(tip);
+
+            // Position tooltip below the active tab button, or bottom-right fallback
+            requestAnimationFrame(() => {
+                if (tabBtn) {
+                    const rect = tabBtn.getBoundingClientRect();
+                    const tipW = tip.offsetWidth || 340;
+                    let left = rect.left + rect.width / 2 - tipW / 2;
+                    left = Math.max(12, Math.min(left, window.innerWidth - tipW - 12));
+                    tip.style.top  = (rect.bottom + 10 + window.scrollY) + 'px';
+                    tip.style.left = left + 'px';
+                    // Highlight the tab button
+                    tabBtn.classList.add('demo-tour-highlight');
+                } else {
+                    tip.style.bottom = '80px';
+                    tip.style.right  = '20px';
+                    tip.style.top    = 'auto';
+                }
+            });
+        }
+
+        window._demoTourNav = function(idx) {
+            // Remove highlight from all tabs
+            document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('demo-tour-highlight'));
+            if (idx >= GUIDE_STEPS.length) { endTour(); return; }
+            tourStep = idx;
+            showTourStep(idx);
+        };
+
+        function removeTourTooltip() {
+            const old = document.getElementById('demoTourTooltip');
+            if (old) old.remove();
+            document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('demo-tour-highlight'));
+        }
+
+        function endTour() {
+            removeTourTooltip();
+            showToast('✅ Tour complete! Explore the tabs on your own.', 'success');
+        }
+
+        function injectTourStyles() {
+            if (document.getElementById('demoTourStyle')) return;
+            const s = document.createElement('style');
+            s.id = 'demoTourStyle';
+            s.textContent = `
+                #demoTourTooltip {
+                    position: fixed;
+                    z-index: 99998;
+                    width: 340px;
+                    background: #161b22;
+                    border: 1.5px solid rgba(255,193,7,.55);
+                    border-radius: 10px;
+                    padding: 14px 16px 12px;
+                    box-shadow: 0 8px 32px rgba(0,0,0,.7), 0 0 0 4000px rgba(0,0,0,.25);
+                    font-family: 'JetBrains Mono', monospace;
+                    animation: tourPop .25s cubic-bezier(.34,1.2,.64,1);
+                }
+                @keyframes tourPop {
+                    from { opacity:0; transform:translateY(-8px) scale(.97); }
+                    to   { opacity:1; transform:translateY(0) scale(1); }
+                }
+                .tour-header {
+                    display: flex; align-items: center; gap: 8px; margin-bottom: 8px;
+                }
+                .tour-emoji { font-size: 18px; }
+                .tour-source {
+                    font-size: 13px; font-weight: 700; color: #ffc107; flex: 1;
+                }
+                .tour-counter {
+                    font-size: 10px; color: #6e7681;
+                    background: #21262d; padding: 2px 7px; border-radius: 10px;
+                }
+                .tour-tip {
+                    font-size: 11.5px; color: #c9d1d9; line-height: 1.65;
+                    margin: 0 0 12px; font-family: sans-serif;
+                }
+                .tour-actions {
+                    display: flex; align-items: center; justify-content: space-between; gap: 8px;
+                }
+                .tour-dots { display: flex; gap: 5px; }
+                .tour-dot {
+                    width: 6px; height: 6px; border-radius: 50%;
+                    background: #30363d; cursor: pointer; transition: background .15s;
+                }
+                .tour-dot.active { background: #ffc107; }
+                .tour-dot:hover  { background: #8b949e; }
+                .tour-btn {
+                    background: none; border: 1px solid #30363d; color: #8b949e;
+                    border-radius: 5px; padding: 4px 12px; font-size: 11px;
+                    cursor: pointer; font-family: inherit; transition: all .15s;
+                }
+                .tour-btn:hover { border-color: #ffc107; color: #ffc107; }
+                .tour-next, .tour-finish {
+                    background: rgba(255,193,7,.12); border-color: rgba(255,193,7,.4);
+                    color: #ffc107;
+                }
+                .tour-next:hover, .tour-finish:hover {
+                    background: rgba(255,193,7,.22);
+                }
+                .tour-close {
+                    position: absolute; top: 8px; right: 10px;
+                    background: none; border: none; color: #6e7681;
+                    cursor: pointer; font-size: 13px; line-height: 1;
+                    padding: 2px 4px; border-radius: 3px; font-family: inherit;
+                }
+                .tour-close:hover { color: #e6edf3; background: #21262d; }
+                .demo-tour-highlight {
+                    outline: 2px solid #ffc107 !important;
+                    outline-offset: 2px;
+                    box-shadow: 0 0 10px rgba(255,193,7,.4) !important;
+                    border-radius: 4px;
+                    position: relative; z-index: 1;
+                }
+            `;
+            document.head.appendChild(s);
+        }
+
+        function showSingleProgress() {
+            const wrap = document.getElementById('singleScanProgress');
+            const cont = document.getElementById('sspSources');
+            const summ = document.getElementById('sspSummary');
+            if (!wrap || !cont) return;
+            wrap.style.display = 'block';
+            summ.textContent = 'Querying…';
+            const sources = ['VirusTotal','AbuseIPDB','WHOIS','URLScan','ThreatFox','URLhaus','MalwareBazaar'];
+            cont.innerHTML = sources.map(s => `
+                <div id="ssp_${s.replace(/[^a-z]/gi,'').toLowerCase()}" style="display:flex; align-items:center; gap:8px; font-size:11px; color:var(--text-muted);">
+                    <span class="ssp-dot" style="width:8px;height:8px;border-radius:50%;background:#30363d;flex-shrink:0;"></span>
+                    <span>${s}</span>
+                    <span class="ssp-status" style="margin-left:auto; color:var(--text-muted);">Pending…</span>
+                </div>`).join('');
+        }
+
+        function markSourceDone(id, label) {
+            const key = label.replace(/[^a-z]/gi,'').toLowerCase();
+            const row = document.getElementById('ssp_' + key);
+            if (!row) return;
+            const dot = row.querySelector('.ssp-dot');
+            const st  = row.querySelector('.ssp-status');
+            if (dot) { dot.style.background = '#3fb950'; dot.style.boxShadow = '0 0 6px #3fb950'; }
+            if (st)  { st.textContent = 'Done'; st.style.color = '#3fb950'; }
+            const summ = document.getElementById('sspSummary');
+            if (summ) summ.textContent = label + ' ✓';
+        }
+
+        function switchToTab(name) {
+            if (typeof window.switchTab === 'function') { window.switchTab(name); return; }
+            document.querySelectorAll('.tab-btn').forEach(b => {
+                b.classList.toggle('active', b.dataset.tab === name);
+            });
+            document.querySelectorAll('.tab-content').forEach(c => {
+                c.classList.toggle('active', c.id === name + 'Tab');
+            });
+        }
+
+        function showExportBar() {
+            const bar = document.getElementById('exportBar');
+            if (bar) bar.style.display = 'flex';
+        }
+
+        /* ── Individual tab renderers ─── */
+        function renderSingleTabResult(source) {
+            const map = {
+                vt:            renderVT,
+                abuseipdb:     renderAbuseIPDB,
+                whois:         renderWHOIS,
+                urlscan:       renderURLScan,
+                threatfox:     renderThreatFox,
+                urlhaus:       renderURLhaus,
+                malwarebazaar: renderMalwareBazaar,
+            };
+            if (map[source]) {
+                map[source]();
+                const empty = document.getElementById(source + 'Empty');
+                if (empty) empty.style.display = 'none';
+            }
+        }
+
+        function renderVT() {
+            const el = document.getElementById('vtResults');
+            if (!el) return;
+            el.innerHTML = `
+            <div class="result-card" style="border:1px solid var(--border-color); border-radius:10px; padding:18px; background:var(--bg-secondary);">
+                <div style="display:flex; align-items:center; gap:10px; margin-bottom:16px;">
+                    <div style="width:48px;height:48px;border-radius:50%;background:rgba(248,81,73,.15);border:2px solid #f85149;display:flex;align-items:center;justify-content:center;font-size:22px;">🦠</div>
+                    <div>
+                        <div style="font-size:15px;font-weight:700;color:#f85149;">MALICIOUS</div>
+                        <div style="font-size:12px;color:var(--text-muted);">185.220.101.47 · IPv4</div>
+                    </div>
+                    <div style="margin-left:auto; text-align:right;">
+                        <div style="font-size:28px;font-weight:700;color:#f85149;">47</div>
+                        <div style="font-size:11px;color:var(--text-muted);">/ 94 engines</div>
+                    </div>
+                </div>
+                <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:10px;margin-bottom:16px;">
+                    ${demoStatCard('AS Number','AS60729 · Emerald Onion','#58a6ff')}
+                    ${demoStatCard('Country','🇩🇪 Germany (DE)','#e6edf3')}
+                    ${demoStatCard('Network','185.220.101.0/24','#e6edf3')}
+                    ${demoStatCard('Reputation Score','-90','#f85149')}
+                </div>
+                <div style="margin-bottom:12px;">
+                    <div style="font-size:11px;font-weight:600;color:var(--text-muted);margin-bottom:8px;text-transform:uppercase;letter-spacing:.05em;">Detection Breakdown</div>
+                    <div style="display:flex;flex-wrap:wrap;gap:6px;">
+                        ${['Malicious (47)','Suspicious (8)','Clean (32)','Undetected (7)'].map((l,i)=>`<span style="padding:3px 10px;border-radius:4px;font-size:11px;background:${['rgba(248,81,73,.15)','rgba(255,193,7,.12)','rgba(63,185,80,.12)','rgba(139,148,158,.1)'][i]};color:${['#f85149','#ffc107','#3fb950','#8b949e'][i]};border:1px solid ${['rgba(248,81,73,.3)','rgba(255,193,7,.25)','rgba(63,185,80,.25)','rgba(139,148,158,.2)'][i]};">${l}</span>`).join('')}
+                    </div>
+                </div>
+                <div>
+                    <div style="font-size:11px;font-weight:600;color:var(--text-muted);margin-bottom:8px;text-transform:uppercase;letter-spacing:.05em;">Sample Engine Detections</div>
+                    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:6px;">
+                        ${[['Kaspersky','Tor-Exit-Node'],['CrowdStrike','malicious_confidence_100'],['Sophos','Tor Exit Relay'],['BitDefender','Malicious.URL'],['ESET','potentially unsafe'],['AlienVault','Malicious Host']].map(([e,r])=>`
+                        <div style="background:var(--bg-tertiary);border-radius:6px;padding:7px 10px;font-size:11px;">
+                            <span style="color:#e6edf3;">${e}</span>
+                            <span style="float:right;color:#f85149;">${r}</span>
+                        </div>`).join('')}
+                    </div>
+                </div>
+                <div style="margin-top:14px;padding-top:12px;border-top:1px solid var(--border-color);font-size:11px;color:var(--text-muted);">
+                    🎬 <em>Demo data — not a real VirusTotal result</em>
+                </div>
+            </div>`;
+        }
+
+        function renderAbuseIPDB() {
+            const el = document.getElementById('abuseipdbResults');
+            if (!el) return;
+            el.innerHTML = `
+            <div class="result-card" style="border:1px solid var(--border-color);border-radius:10px;padding:18px;background:var(--bg-secondary);">
+                <div style="display:flex;align-items:center;gap:10px;margin-bottom:16px;">
+                    <div style="width:48px;height:48px;border-radius:50%;background:rgba(248,81,73,.15);border:2px solid #f85149;display:flex;align-items:center;justify-content:center;font-size:22px;">🚨</div>
+                    <div><div style="font-size:15px;font-weight:700;color:#f85149;">HIGH ABUSE SCORE</div><div style="font-size:12px;color:var(--text-muted);">185.220.101.47</div></div>
+                    <div style="margin-left:auto;text-align:right;"><div style="font-size:28px;font-weight:700;color:#f85149;">98</div><div style="font-size:11px;color:var(--text-muted);">/ 100 confidence</div></div>
+                </div>
+                <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:10px;margin-bottom:14px;">
+                    ${demoStatCard('Total Reports','4,821','#f85149')}
+                    ${demoStatCard('Distinct Users','312','#ffc107')}
+                    ${demoStatCard('Last Reported','2 hours ago','#e6edf3')}
+                    ${demoStatCard('ISP','Tor Project','#8b949e')}
+                    ${demoStatCard('Domain','tor-exit.example','#8b949e')}
+                    ${demoStatCard('Usage Type','Tor Exit Node','#58a6ff')}
+                </div>
+                <div style="font-size:11px;font-weight:600;color:var(--text-muted);margin-bottom:8px;text-transform:uppercase;">Recent Report Categories</div>
+                <div style="display:flex;flex-wrap:wrap;gap:6px;">
+                    ${['SSH Brute Force','Port Scan','Web App Attack','DDoS','Spam','Hacking'].map(c=>`<span style="padding:3px 10px;border-radius:4px;font-size:11px;background:rgba(248,81,73,.12);color:#f85149;border:1px solid rgba(248,81,73,.25);">${c}</span>`).join('')}
+                </div>
+                <div style="margin-top:14px;padding-top:12px;border-top:1px solid var(--border-color);font-size:11px;color:var(--text-muted);">
+                    🎬 <em>Demo data — not a real AbuseIPDB result</em>
+                </div>
+            </div>`;
+        }
+
+        function renderWHOIS() {
+            const el = document.getElementById('whoisResults');
+            if (!el) return;
+            el.innerHTML = `
+            <div class="result-card" style="border:1px solid var(--border-color);border-radius:10px;padding:18px;background:var(--bg-secondary);">
+                <div style="font-size:14px;font-weight:600;color:var(--text-primary);margin-bottom:14px;">WHOIS — 185.220.101.47</div>
+                <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:10px;">
+                    ${[['IP Range','185.220.101.0/24'],['CIDR','185.220.101.0/24'],['NetName','TOR-EXIT-DE'],['Organization','Emerald Onion'],['Country','DE (Germany)'],['RegDate','2019-04-12'],['Updated','2024-11-01'],['Abuse Contact','abuse@emeraldonion.org']].map(([k,v])=>demoStatCard(k,v,'#e6edf3')).join('')}
+                </div>
+                <div style="margin-top:14px;padding-top:12px;border-top:1px solid var(--border-color);font-size:11px;color:var(--text-muted);">
+                    🎬 <em>Demo data — not a real WHOIS result</em>
+                </div>
+            </div>`;
+        }
+
+        function renderURLScan() {
+            const el = document.getElementById('urlscanResults');
+            if (!el) return;
+            el.innerHTML = `
+            <div class="result-card" style="border:1px solid var(--border-color);border-radius:10px;padding:18px;background:var(--bg-secondary);">
+                <div style="display:flex;align-items:center;gap:10px;margin-bottom:14px;">
+                    <div style="font-size:22px;">🌐</div>
+                    <div><div style="font-size:14px;font-weight:600;color:#ffc107;">SUSPICIOUS</div><div style="font-size:12px;color:var(--text-muted);">Scan UUID: d4f2a1b0-7e3c-4a5d-9f01-2b3c4d5e6f70</div></div>
+                    <div style="margin-left:auto;"><span style="background:rgba(255,193,7,.15);color:#ffc107;padding:4px 10px;border-radius:4px;font-size:12px;border:1px solid rgba(255,193,7,.3);">Score: 72 / 100</span></div>
+                </div>
+                <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:10px;margin-bottom:14px;">
+                    ${[['Verdict','Suspicious Activity'],['Malicious Indicators','3 found'],['HTTP Requests','47'],['Unique Domains','12'],['IPs Contacted','8'],['Redirects','2']].map(([k,v])=>demoStatCard(k,v,'#e6edf3')).join('')}
+                </div>
+                <div style="font-size:11px;font-weight:600;color:var(--text-muted);margin-bottom:8px;text-transform:uppercase;">Flagged Indicators</div>
+                <div style="display:flex;flex-direction:column;gap:6px;">
+                    ${[['🚨','Contacts known C2 IP: 185.220.101.47','#f85149'],['⚠️','Script loaded from unrelated domain','#ffc107'],['⚠️','Unusual redirect chain detected','#ffc107']].map(([ico,t,c])=>`<div style="background:var(--bg-tertiary);border-radius:6px;padding:8px 10px;font-size:12px;color:${c};">${ico} ${t}</div>`).join('')}
+                </div>
+                <div style="margin-top:14px;padding-top:12px;border-top:1px solid var(--border-color);font-size:11px;color:var(--text-muted);">
+                    🎬 <em>Demo data — not a real URLScan result</em>
+                </div>
+            </div>`;
+        }
+
+        function renderThreatFox() {
+            const el = document.getElementById('threatfoxResults');
+            if (!el) return;
+            el.innerHTML = `
+            <div class="result-card" style="border:1px solid var(--border-color);border-radius:10px;padding:18px;background:var(--bg-secondary);">
+                <div style="display:flex;align-items:center;gap:10px;margin-bottom:14px;">
+                    <span style="font-size:24px;">🦊</span>
+                    <div><div style="font-size:14px;font-weight:600;color:#f85149;">IOC FOUND IN THREATFOX</div><div style="font-size:12px;color:var(--text-muted);">2 matching records</div></div>
+                </div>
+                <div style="display:flex;flex-direction:column;gap:10px;">
+                    ${[{id:'IOC#98412',threat:'Cobalt Strike',type:'ip:port',conf:'High (90%)',first:'2025-01-14',last:'2025-03-10',tags:['CobaltStrike','C2','APT']},{id:'IOC#77893',threat:'TrickBot',type:'ip:port',conf:'Medium (70%)',first:'2024-09-02',last:'2025-02-28',tags:['TrickBot','Banking','Malware']}].map(r=>`
+                    <div style="background:var(--bg-tertiary);border-radius:8px;padding:12px;">
+                        <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px;">
+                            <span style="font-size:11px;font-family:'JetBrains Mono',monospace;color:#58a6ff;">${r.id}</span>
+                            <span style="margin-left:auto;font-size:11px;background:rgba(248,81,73,.15);color:#f85149;padding:2px 8px;border-radius:4px;">${r.threat}</span>
+                        </div>
+                        <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;font-size:11px;margin-bottom:8px;">
+                            <span style="color:var(--text-muted);">Type: <span style="color:#e6edf3;">${r.type}</span></span>
+                            <span style="color:var(--text-muted);">Confidence: <span style="color:#ffc107;">${r.conf}</span></span>
+                            <span style="color:var(--text-muted);">First seen: <span style="color:#e6edf3;">${r.first}</span></span>
+                            <span style="color:var(--text-muted);">Last seen: <span style="color:#e6edf3;">${r.last}</span></span>
+                        </div>
+                        <div style="display:flex;gap:6px;flex-wrap:wrap;">${r.tags.map(t=>`<span style="background:rgba(88,166,255,.1);color:#58a6ff;padding:2px 8px;border-radius:4px;font-size:10px;border:1px solid rgba(88,166,255,.2);">${t}</span>`).join('')}</div>
+                    </div>`).join('')}
+                </div>
+                <div style="margin-top:14px;padding-top:12px;border-top:1px solid var(--border-color);font-size:11px;color:var(--text-muted);">
+                    🎬 <em>Demo data — not a real ThreatFox result</em>
+                </div>
+            </div>`;
+        }
+
+        function renderURLhaus() {
+            const el = document.getElementById('urlhausResults');
+            if (!el) return;
+            el.innerHTML = `
+            <div class="result-card" style="border:1px solid var(--border-color);border-radius:10px;padding:18px;background:var(--bg-secondary);">
+                <div style="display:flex;align-items:center;gap:10px;margin-bottom:14px;">
+                    <span style="font-size:24px;">🔴</span>
+                    <div><div style="font-size:14px;font-weight:600;color:#f85149;">LISTED IN URLHAUS</div><div style="font-size:12px;color:var(--text-muted);">3 associated malware URLs</div></div>
+                </div>
+                <div style="display:flex;flex-direction:column;gap:8px;">
+                    ${[{url:'http://185.220.101.47/payload/loader.exe',status:'online',tag:'Emotet'},
+                       {url:'http://185.220.101.47/drop/stage2.dll',status:'offline',tag:'Qakbot'},
+                       {url:'http://185.220.101.47/c2/check-in',status:'online',tag:'C2'}].map(r=>`
+                    <div style="background:var(--bg-tertiary);border-radius:6px;padding:10px 12px;font-size:11px;">
+                        <div style="font-family:'JetBrains Mono',monospace;color:#58a6ff;word-break:break-all;margin-bottom:6px;">${r.url}</div>
+                        <div style="display:flex;gap:8px;align-items:center;">
+                            <span style="padding:2px 8px;border-radius:4px;font-size:10px;background:${r.status==='online'?'rgba(248,81,73,.15)':'rgba(139,148,158,.1)'};color:${r.status==='online'?'#f85149':'#8b949e'};border:1px solid ${r.status==='online'?'rgba(248,81,73,.3)':'rgba(139,148,158,.2)'};">${r.status}</span>
+                            <span style="background:rgba(255,193,7,.1);color:#ffc107;padding:2px 8px;border-radius:4px;font-size:10px;border:1px solid rgba(255,193,7,.2);">${r.tag}</span>
+                        </div>
+                    </div>`).join('')}
+                </div>
+                <div style="margin-top:14px;padding-top:12px;border-top:1px solid var(--border-color);font-size:11px;color:var(--text-muted);">
+                    🎬 <em>Demo data — not a real URLhaus result</em>
+                </div>
+            </div>`;
+        }
+
+        function renderMalwareBazaar() {
+            const el = document.getElementById('malwarebazaarResults');
+            if (!el) return;
+            el.innerHTML = `
+            <div class="result-card" style="border:1px solid var(--border-color);border-radius:10px;padding:18px;background:var(--bg-secondary);">
+                <div style="display:flex;align-items:center;gap:10px;margin-bottom:14px;">
+                    <span style="font-size:24px;">☣️</span>
+                    <div><div style="font-size:14px;font-weight:600;color:var(--text-muted);">NOT FOUND IN MALWAREBAZAAR</div><div style="font-size:12px;color:var(--text-muted);">This IP is not directly indexed as a sample hash</div></div>
+                </div>
+                <div style="background:var(--bg-tertiary);border-radius:6px;padding:12px;font-size:12px;color:var(--text-secondary);line-height:1.6;">
+                    MalwareBazaar indexes malware file hashes (MD5/SHA256). No direct match for IP <code style="color:#58a6ff;">185.220.101.47</code>, but associated hash samples were found via URLhaus cross-reference.
+                </div>
+                <div style="margin-top:14px;padding-top:12px;border-top:1px solid var(--border-color);font-size:11px;color:var(--text-muted);">
+                    🎬 <em>Demo data — not a real MalwareBazaar result</em>
+                </div>
+            </div>`;
+        }
+
+        function renderCombinedResult() {
+            const el = document.getElementById('combinedResults');
+            if (!el) return;
+            el.innerHTML = `
+            <div class="result-card" style="border:2px solid rgba(248,81,73,.4);border-radius:10px;padding:20px;background:var(--bg-secondary);">
+                <div style="display:flex;align-items:center;gap:12px;margin-bottom:20px;">
+                    <div style="width:56px;height:56px;border-radius:50%;background:rgba(248,81,73,.15);border:2px solid #f85149;display:flex;align-items:center;justify-content:center;font-size:28px;">🚨</div>
+                    <div>
+                        <div style="font-size:18px;font-weight:700;color:#f85149;">MALICIOUS — HIGH CONFIDENCE</div>
+                        <div style="font-size:13px;color:var(--text-muted);">185.220.101.47 · Threat Score: 94/100</div>
+                    </div>
+                </div>
+                <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:10px;margin-bottom:18px;">
+                    ${[['VirusTotal','47/94','#f85149'],['AbuseIPDB','98/100','#f85149'],['ThreatFox','2 IOCs','#ffc107'],['URLhaus','3 URLs','#f85149'],['URLScan','Suspicious','#ffc107'],['WHOIS','Tor Exit','#8b949e']].map(([src,val,col])=>`
+                    <div style="background:var(--bg-tertiary);border-radius:8px;padding:10px;text-align:center;">
+                        <div style="font-size:10px;color:var(--text-muted);margin-bottom:4px;">${src}</div>
+                        <div style="font-size:14px;font-weight:600;color:${col};">${val}</div>
+                    </div>`).join('')}
+                </div>
+                <div style="font-size:13px;font-weight:600;color:var(--text-primary);margin-bottom:10px;">🔍 AI Threat Summary</div>
+                <div style="background:rgba(248,81,73,.06);border:1px solid rgba(248,81,73,.2);border-radius:8px;padding:14px;font-size:12px;color:var(--text-secondary);line-height:1.7;">
+                    <strong style="color:#f85149;">185.220.101.47</strong> is a <strong>known Tor exit node</strong> operated by Emerald Onion (AS60729, Germany). 
+                    The IP has been flagged by <strong>47 out of 94 VirusTotal engines</strong> and carries an <strong>AbuseIPDB confidence score of 98%</strong> with over 4,800 community reports. 
+                    It is actively associated with <strong>Cobalt Strike C2</strong> and <strong>TrickBot</strong> activity per ThreatFox, and hosts at least <strong>3 malware distribution URLs</strong> tracked by URLhaus.
+                    <br><br>
+                    <strong style="color:#ffc107;">Recommended Action:</strong> Block at perimeter firewall, create SIEM detection rule, escalate to Tier 2.
+                </div>
+                <div style="margin-top:14px;padding-top:12px;border-top:1px solid var(--border-color);font-size:11px;color:var(--text-muted);">
+                    🎬 <em>Demo data — all results are simulated for demonstration purposes</em>
+                </div>
+            </div>`;
+            const empty = document.getElementById('combinedEmpty');
+            if (empty) empty.style.display = 'none';
+            switchToTab('combined');
+        }
+
+        /* ════════════════════════════════════════
+           BULK SCAN SIMULATION
+           ════════════════════════════════════════ */
+        const BULK_DEMO_DATA = [
+            {
+                ioc:'185.220.101.47', type:'IP', verdict:'Malicious', score:94,
+                vt:'47/94 🔴', abuseipdb:'98% 🔴', whois:'Emerald Onion / DE', urlscan:'Suspicious 🟡',
+                threatfox:'2 IOCs 🔴', urlhaus:'3 URLs 🔴', malwarebazaar:'N/A ⚪',
+                tags:['Tor Exit','C2','Cobalt Strike']
+            },
+            {
+                ioc:'malware-dropper.ru', type:'Domain', verdict:'Malicious', score:88,
+                vt:'38/89 🔴', abuseipdb:'N/A ⚪', whois:'NameCheap / RU', urlscan:'Malicious 🔴',
+                threatfox:'1 IOC 🔴', urlhaus:'2 URLs 🔴', malwarebazaar:'1 sample 🔴',
+                tags:['Dropper','Phishing','Emotet']
+            },
+            {
+                ioc:'http://phish-kit.xyz/login.php', type:'URL', verdict:'Malicious', score:91,
+                vt:'41/87 🔴', abuseipdb:'N/A ⚪', whois:'GoDaddy / US', urlscan:'Malicious 🔴',
+                threatfox:'Not found ⚪', urlhaus:'Listed 🔴', malwarebazaar:'Not found ⚪',
+                tags:['Phishing','Credential Harvesting']
+            },
+            {
+                ioc:'a3b4c5d6e7f8a1b2c3d4e5f601', type:'Hash', verdict:'Malicious', score:85,
+                vt:'62/71 🔴', abuseipdb:'N/A ⚪', whois:'N/A ⚪', urlscan:'N/A ⚪',
+                threatfox:'1 IOC 🔴', urlhaus:'Not found ⚪', malwarebazaar:'Found 🔴',
+                tags:['Ransomware','LockBit']
+            },
+            {
+                ioc:'45.33.32.156', type:'IP', verdict:'Suspicious', score:45,
+                vt:'12/94 🟡', abuseipdb:'44% 🟡', whois:'Linode / US', urlscan:'Low risk 🟡',
+                threatfox:'Not found ⚪', urlhaus:'Not found ⚪', malwarebazaar:'Not found ⚪',
+                tags:['Scanner','Shodan']
+            },
+            {
+                ioc:'evil-botnet-c2.com', type:'Domain', verdict:'Malicious', score:90,
+                vt:'36/89 🔴', abuseipdb:'N/A ⚪', whois:'PDR / RU', urlscan:'Malicious 🔴',
+                threatfox:'2 IOCs 🔴', urlhaus:'1 URL 🔴', malwarebazaar:'Not found ⚪',
+                tags:['Botnet','C2','QakBot']
+            },
+            {
+                ioc:'193.106.191.162', type:'IP', verdict:'Suspicious', score:52,
+                vt:'8/94 🟡', abuseipdb:'67% 🟡', whois:'M247 / RO', urlscan:'Suspicious 🟡',
+                threatfox:'Not found ⚪', urlhaus:'Not found ⚪', malwarebazaar:'Not found ⚪',
+                tags:['Brute Force','SSH']
+            },
+            {
+                ioc:'ransomware-stage2.onion.ws', type:'Domain', verdict:'Malicious', score:97,
+                vt:'55/89 🔴', abuseipdb:'N/A ⚪', whois:'Onion Routing / Anon', urlscan:'Malicious 🔴',
+                threatfox:'3 IOCs 🔴', urlhaus:'2 URLs 🔴', malwarebazaar:'2 samples 🔴',
+                tags:['Ransomware','Dark Web']
+            },
+        ];
+
+        function simulateBulkScan() {
+            const bulkTab = document.getElementById('bulkTab');
+            const bulkBtn = document.getElementById('bulkScanBtn');
+            if (bulkTab) bulkTab.innerHTML = buildBulkProgressHTML();
+            if (bulkBtn) bulkBtn.style.display = 'flex';
+
+            switchToTab('bulk');
+
+            const total = BULK_DEMO_DATA.length;
+            let done = 0;
+
+            BULK_DEMO_DATA.forEach((item, idx) => {
+                setTimeout(() => {
+                    done++;
+                    updateBulkProgress(done, total, item);
+                    if (done === total) {
+                        setTimeout(() => {
+                            renderBulkFinalTable();
+                            showExportBar();
+                            showToast('🎬 Demo bulk scan complete — ' + total + ' IOCs simulated!', 'success');
+                        }, 400);
+                    }
+                }, 600 + idx * 450);
+            });
+        }
+
+        function buildBulkProgressHTML() {
+            return `<div id="demoBulkProgress" style="padding:16px;">
+                <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px;">
+                    <div style="font-size:13px;font-weight:600;color:var(--text-primary);">📋 Bulk Scan Progress</div>
+                    <div id="demoBulkCounter" style="font-size:12px;color:var(--text-muted);">0 / ${BULK_DEMO_DATA.length}</div>
+                </div>
+                <div style="background:var(--bg-tertiary);border-radius:4px;height:6px;overflow:hidden;margin-bottom:16px;">
+                    <div id="demoBulkBar" style="height:100%;width:0%;background:linear-gradient(90deg,#1f6feb,#58a6ff);transition:width .35s ease;border-radius:4px;"></div>
+                </div>
+                <div id="demoBulkRows" style="display:flex;flex-direction:column;gap:6px;max-height:340px;overflow-y:auto;"></div>
+            </div>`;
+        }
+
+        function updateBulkProgress(done, total, item) {
+            const bar  = document.getElementById('demoBulkBar');
+            const ctr  = document.getElementById('demoBulkCounter');
+            const rows = document.getElementById('demoBulkRows');
+            if (bar) bar.style.width = Math.round(done/total*100) + '%';
+            if (ctr) ctr.textContent = done + ' / ' + total;
+            if (rows) {
+                const col = item.verdict === 'Malicious' ? '#f85149' : item.verdict === 'Suspicious' ? '#ffc107' : '#3fb950';
+                const row = document.createElement('div');
+                row.style.cssText = 'display:flex;align-items:center;gap:10px;background:var(--bg-secondary);border-radius:6px;padding:8px 12px;font-size:12px;animation:demoFadeIn .3s ease;';
+                row.innerHTML = `
+                    <span style="width:8px;height:8px;border-radius:50%;background:${col};flex-shrink:0;box-shadow:0 0 6px ${col};"></span>
+                    <span style="font-family:'JetBrains Mono',monospace;color:var(--text-primary);flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${item.ioc}</span>
+                    <span style="color:var(--text-muted);font-size:11px;">${item.type}</span>
+                    <span style="color:${col};font-weight:600;">${item.verdict}</span>`;
+                rows.appendChild(row);
+                rows.scrollTop = rows.scrollHeight;
+            }
+        }
+
+        function renderBulkFinalTable() {
+            const bulkTab = document.getElementById('bulkTab');
+            if (!bulkTab) return;
+
+            const malCount   = BULK_DEMO_DATA.filter(r=>r.verdict==='Malicious').length;
+            const suspCount  = BULK_DEMO_DATA.filter(r=>r.verdict==='Suspicious').length;
+            const cleanCount = BULK_DEMO_DATA.length - malCount - suspCount;
+
+            // Inject fade-in keyframe if not already present
+            if (!document.getElementById('demoFadeStyle')) {
+                const s = document.createElement('style');
+                s.id = 'demoFadeStyle';
+                s.textContent = `
+                    @keyframes demoFadeIn { from{opacity:0;transform:translateY(6px)} to{opacity:1;transform:translateY(0)} }
+                    .bulk-ti-cell { font-size:11px; white-space:nowrap; }
+                    .bulk-ioc-cell { font-family:'JetBrains Mono',monospace; color:#58a6ff; max-width:180px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+                `;
+                document.head.appendChild(s);
+            }
+
+            bulkTab.innerHTML = `
+            <div style="padding:16px;">
+                <!-- Summary strip -->
+                <div style="display:flex;gap:10px;margin-bottom:16px;flex-wrap:wrap;">
+                    ${[['Total Scanned', BULK_DEMO_DATA.length,'#58a6ff'],['Malicious',malCount,'#f85149'],['Suspicious',suspCount,'#ffc107'],['Clean',cleanCount,'#3fb950']].map(([l,v,c])=>`
+                    <div style="flex:1;min-width:90px;background:var(--bg-secondary);border-radius:8px;padding:12px;text-align:center;border:1px solid var(--border-color);">
+                        <div style="font-size:22px;font-weight:700;color:${c};">${v}</div>
+                        <div style="font-size:11px;color:var(--text-muted);margin-top:2px;">${l}</div>
+                    </div>`).join('')}
+                </div>
+
+                <!-- Full Intelligence Table -->
+                <div style="overflow-x:auto;border-radius:8px;border:1px solid var(--border-color);">
+                    <table style="width:100%;border-collapse:collapse;font-size:11.5px;">
+                        <thead>
+                            <tr style="background:var(--bg-tertiary);color:var(--text-muted);text-transform:uppercase;font-size:10px;letter-spacing:.04em;">
+                                <th style="padding:9px 12px;text-align:left;white-space:nowrap;">IOC</th>
+                                <th style="padding:9px 8px;text-align:left;">Type</th>
+                                <th style="padding:9px 8px;text-align:center;">Verdict</th>
+                                <th style="padding:9px 8px;text-align:center;">Score</th>
+                                <th style="padding:9px 8px;text-align:center;">VirusTotal</th>
+                                <th style="padding:9px 8px;text-align:center;">AbuseIPDB</th>
+                                <th style="padding:9px 8px;text-align:center;">WHOIS</th>
+                                <th style="padding:9px 8px;text-align:center;">URLScan</th>
+                                <th style="padding:9px 8px;text-align:center;">🦊 ThreatFox</th>
+                                <th style="padding:9px 8px;text-align:center;">🔴 URLhaus</th>
+                                <th style="padding:9px 8px;text-align:center;">☣️ MalwareBazaar</th>
+                                <th style="padding:9px 8px;text-align:left;">Tags</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            ${BULK_DEMO_DATA.map((r,i)=>{
+                                const col = r.verdict==='Malicious'?'#f85149':r.verdict==='Suspicious'?'#ffc107':'#3fb950';
+                                const vBg = r.verdict==='Malicious'?'rgba(248,81,73,.15)':r.verdict==='Suspicious'?'rgba(255,193,7,.12)':'rgba(63,185,80,.12)';
+                                const vBd = r.verdict==='Malicious'?'rgba(248,81,73,.3)':r.verdict==='Suspicious'?'rgba(255,193,7,.25)':'rgba(63,185,80,.25)';
+                                const rowBg = i%2 ? 'var(--bg-tertiary)' : 'var(--bg-secondary)';
+                                const tdStyle = `padding:8px 8px;text-align:center;`;
+                                return `<tr style="border-top:1px solid var(--border-color);background:${rowBg};">
+                                    <td style="padding:8px 12px;" title="${r.ioc}"><span class="bulk-ioc-cell">${r.ioc}</span></td>
+                                    <td style="padding:8px 8px;color:var(--text-muted);white-space:nowrap;">${r.type}</td>
+                                    <td style="${tdStyle}"><span style="padding:3px 8px;border-radius:4px;font-size:10px;background:${vBg};color:${col};border:1px solid ${vBd};white-space:nowrap;">${r.verdict}</span></td>
+                                    <td style="${tdStyle}font-weight:700;color:${col};">${r.score}</td>
+                                    <td class="bulk-ti-cell" style="${tdStyle}color:var(--text-secondary);">${r.vt}</td>
+                                    <td class="bulk-ti-cell" style="${tdStyle}color:var(--text-secondary);">${r.abuseipdb}</td>
+                                    <td class="bulk-ti-cell" style="${tdStyle}color:var(--text-secondary);font-size:10px;max-width:100px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="${r.whois}">${r.whois}</td>
+                                    <td class="bulk-ti-cell" style="${tdStyle}color:var(--text-secondary);">${r.urlscan}</td>
+                                    <td class="bulk-ti-cell" style="${tdStyle}color:var(--text-secondary);">${r.threatfox}</td>
+                                    <td class="bulk-ti-cell" style="${tdStyle}color:var(--text-secondary);">${r.urlhaus}</td>
+                                    <td class="bulk-ti-cell" style="${tdStyle}color:var(--text-secondary);">${r.malwarebazaar}</td>
+                                    <td style="padding:8px 8px;"><div style="display:flex;gap:3px;flex-wrap:wrap;">${r.tags.map(t=>`<span style="background:rgba(88,166,255,.08);color:#58a6ff;padding:1px 5px;border-radius:3px;font-size:9px;border:1px solid rgba(88,166,255,.15);white-space:nowrap;">${t}</span>`).join('')}</div></td>
+                                </tr>`;
+                            }).join('')}
+                        </tbody>
+                    </table>
+                </div>
+                <div style="margin-top:10px;font-size:11px;color:var(--text-muted);">
+                    🎬 <em>Demo data — all ${BULK_DEMO_DATA.length} results fully simulated · 🔴 Malicious &nbsp;🟡 Suspicious &nbsp;⚪ Not found / N/A</em>
+                </div>
+            </div>`;
+        }
+
+        /* ── Shared stat card helper ─────────── */
+        function demoStatCard(label, value, color) {
+            return `<div style="background:var(--bg-tertiary);border-radius:8px;padding:10px 12px;">
+                <div style="font-size:10px;color:var(--text-muted);margin-bottom:3px;text-transform:uppercase;letter-spacing:.04em;">${label}</div>
+                <div style="font-size:13px;font-weight:600;color:${color};">${value}</div>
+            </div>`;
+        }
+
+    })();
+    </script>
 </body>
 </html>
 
