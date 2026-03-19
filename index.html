@@ -43,6 +43,13 @@
                 <span class="status-dot" id="abusechStatus"></span>
                 <span>AbuseCH</span>
             </div>
+            <!-- PhishGuard Tool Button -->
+            <button class="btn pg-launch-btn" id="pgLaunchBtn" onclick="openPhishGuard()" title="Open PhishGuard — Email Phishing Analyzer">
+                <span class="pg-btn-icon">🎣</span>
+                <span class="pg-btn-text">PhishGuard</span>
+                <span class="pg-new-badge" id="pgNewBadge">NEW</span>
+            </button>
+
             <button class="btn" onclick="openSettings()">
                 <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
                     <path d="M19.14 12.94c.04-.31.06-.63.06-.94 0-.31-.02-.63-.06-.94l2.03-1.58c.18-.14.23-.41.12-.61l-1.92-3.32c-.12-.22-.37-.29-.59-.22l-2.39.96c-.5-.38-1.03-.7-1.62-.94l-.36-2.54c-.04-.24-.24-.41-.48-.41h-3.84c-.24 0-.43.17-.47.41l-.36 2.54c-.59.24-1.13.57-1.62.94l-2.39-.96c-.22-.08-.47 0-.59.22L2.74 8.87c-.12.21-.08.47.12.61l2.03 1.58c-.04.31-.06.63-.06.94s.02.63.06.94l-2.03 1.58c-.18.14-.23.41-.12.61l1.92 3.32c.12.22.37.29.59.22l2.39-.96c.5.38 1.03.7 1.62.94l.36 2.54c.05.24.24.41.48.41h3.84c.24 0 .44-.17.47-.41l.36-2.54c.59-.24 1.13-.56 1.62-.94l2.39.96c.22.08.47 0 .59-.22l1.92-3.32c.12-.22.07-.47-.12-.61l-2.01-1.58zM12 15.6c-1.98 0-3.6-1.62-3.6-3.6s1.62-3.6 3.6-3.6 3.6 1.62 3.6 3.6-1.62 3.6-3.6 3.6z"/>
@@ -128,6 +135,20 @@
                         <span>No recent scans</span>
                     </div>
                 </div>
+            </div>
+            <!-- PhishGuard Sidebar Card -->
+            <div class="pg-sidebar-card" id="pgSidebarCard">
+                <div class="pg-sidebar-header">
+                    <span class="pg-sidebar-icon">🎣</span>
+                    <span class="pg-sidebar-title">PhishGuard</span>
+                    <span class="pg-sidebar-new">NEW</span>
+                </div>
+                <p class="pg-sidebar-desc">Analyze phishing emails — SPF · DKIM · DMARC · HTML body · URLs · IOC extraction</p>
+                <button class="pg-sidebar-btn" onclick="openPhishGuard()">
+                    <svg width="13" height="13" viewBox="0 0 24 24" fill="currentColor"><path d="M19 3H5c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2zm-5 14H7v-2h7v2zm3-4H7v-2h10v2zm0-4H7V7h10v2z"/></svg>
+                    Open PhishGuard Analyzer
+                    <svg width="11" height="11" viewBox="0 0 24 24" fill="currentColor" style="margin-left:auto;opacity:.6"><path d="M19 19H5V5h7V3H5a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7h-2v7zM14 3v2h3.59l-9.83 9.83 1.41 1.41L19 6.41V10h2V3h-7z"/></svg>
+                </button>
             </div>
         </aside>
 
@@ -649,7 +670,310 @@ Use timestamps to track events. Press Ctrl+3 for quick timestamp."
             0%, 100% { opacity: 1; }
             50%       { opacity: 0.55; }
         }
+
+        /* ══════════════════════════════════════════════════════════
+           PHISHGUARD INTEGRATION — Header button + Sidebar card
+           ══════════════════════════════════════════════════════════ */
+
+        /* ── Header launch button ──────────────────────────────── */
+        .pg-launch-btn {
+            position: relative;
+            background: linear-gradient(135deg, rgba(56,139,253,.15), rgba(188,140,255,.12));
+            border: 1px solid rgba(188,140,255,.45) !important;
+            color: #bc8cff !important;
+            font-weight: 600;
+            overflow: visible;
+            transition: all .2s;
+        }
+        .pg-launch-btn:hover {
+            background: linear-gradient(135deg, rgba(56,139,253,.25), rgba(188,140,255,.2)) !important;
+            border-color: #bc8cff !important;
+            box-shadow: 0 0 16px rgba(188,140,255,.3);
+            transform: translateY(-1px);
+        }
+        .pg-launch-btn:active { transform: translateY(0); }
+
+        /* Shimmer sweep animation */
+        .pg-launch-btn::before {
+            content: '';
+            position: absolute;
+            inset: 0;
+            background: linear-gradient(90deg, transparent, rgba(255,255,255,.1), transparent);
+            transform: translateX(-100%);
+            animation: pgShimmer 2.8s ease-in-out infinite;
+            border-radius: inherit;
+        }
+        @keyframes pgShimmer {
+            0%   { transform: translateX(-100%); }
+            40%  { transform: translateX(100%); }
+            100% { transform: translateX(100%); }
+        }
+
+        .pg-btn-icon { font-size: 15px; }
+        .pg-btn-text { font-size: 13px; letter-spacing: .01em; }
+
+        /* NEW badge on button */
+        .pg-new-badge {
+            position: absolute;
+            top: -8px;
+            right: -8px;
+            background: #f85149;
+            color: #fff;
+            font-size: 8px;
+            font-weight: 800;
+            letter-spacing: .08em;
+            padding: 2px 5px;
+            border-radius: 4px;
+            border: 1.5px solid #0d1117;
+            line-height: 1;
+            animation: pgBadgePop .4s cubic-bezier(.34,1.56,.64,1) both,
+                       pgBadgePulse 2s ease-in-out 1s infinite;
+            pointer-events: none;
+        }
+        @keyframes pgBadgePop {
+            from { transform: scale(0); opacity: 0; }
+            to   { transform: scale(1); opacity: 1; }
+        }
+        @keyframes pgBadgePulse {
+            0%,100% { box-shadow: 0 0 0 0 rgba(248,81,73,.6); }
+            50%     { box-shadow: 0 0 0 4px rgba(248,81,73,0); }
+        }
+        .pg-new-badge.dismissed { display: none; }
+
+        /* ── Sidebar card ──────────────────────────────────────── */
+        .pg-sidebar-card {
+            margin-top: 12px;
+            background: linear-gradient(135deg, rgba(56,139,253,.07), rgba(188,140,255,.07));
+            border: 1px solid rgba(188,140,255,.3);
+            border-radius: 10px;
+            padding: 14px;
+            position: relative;
+            overflow: hidden;
+            animation: pgCardSlideIn .5s cubic-bezier(.34,1.2,.64,1) both;
+            animation-delay: .3s;
+        }
+        @keyframes pgCardSlideIn {
+            from { opacity: 0; transform: translateY(14px); }
+            to   { opacity: 1; transform: translateY(0); }
+        }
+
+        /* Animated border glow */
+        .pg-sidebar-card::before {
+            content: '';
+            position: absolute;
+            inset: -1px;
+            border-radius: 11px;
+            background: linear-gradient(135deg, rgba(56,139,253,.4), rgba(188,140,255,.4), rgba(56,139,253,.4));
+            background-size: 200% 200%;
+            animation: pgBorderGlow 3s ease infinite;
+            z-index: -1;
+            opacity: 0;
+            transition: opacity .3s;
+        }
+        .pg-sidebar-card:hover::before { opacity: 1; }
+        @keyframes pgBorderGlow {
+            0%   { background-position: 0% 50%; }
+            50%  { background-position: 100% 50%; }
+            100% { background-position: 0% 50%; }
+        }
+
+        .pg-sidebar-header {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            margin-bottom: 8px;
+        }
+        .pg-sidebar-icon { font-size: 18px; }
+        .pg-sidebar-title {
+            font-size: 14px;
+            font-weight: 700;
+            color: var(--text-primary, #e6edf3);
+            flex: 1;
+            letter-spacing: -.01em;
+        }
+
+        /* NEW badge on sidebar card */
+        .pg-sidebar-new {
+            background: linear-gradient(135deg, #f85149, #ff6b6b);
+            color: #fff;
+            font-size: 9px;
+            font-weight: 800;
+            letter-spacing: .1em;
+            padding: 3px 7px;
+            border-radius: 4px;
+            line-height: 1;
+            animation: pgBadgePulse 2s ease-in-out infinite;
+            flex-shrink: 0;
+        }
+
+        .pg-sidebar-desc {
+            font-size: 11px;
+            color: var(--text-muted, #6e7681);
+            line-height: 1.6;
+            margin-bottom: 12px;
+        }
+
+        .pg-sidebar-btn {
+            width: 100%;
+            display: flex;
+            align-items: center;
+            gap: 7px;
+            padding: 9px 12px;
+            background: linear-gradient(135deg, rgba(56,139,253,.2), rgba(188,140,255,.15));
+            border: 1px solid rgba(188,140,255,.4);
+            border-radius: 7px;
+            color: #bc8cff;
+            font-size: 12px;
+            font-weight: 600;
+            cursor: pointer;
+            font-family: 'JetBrains Mono', monospace;
+            transition: all .2s;
+            position: relative;
+            overflow: hidden;
+        }
+        .pg-sidebar-btn:hover {
+            background: linear-gradient(135deg, rgba(56,139,253,.3), rgba(188,140,255,.25));
+            border-color: #bc8cff;
+            box-shadow: 0 0 14px rgba(188,140,255,.25);
+            color: #d2a8ff;
+        }
+        /* Shimmer on sidebar button */
+        .pg-sidebar-btn::after {
+            content: '';
+            position: absolute;
+            inset: 0;
+            background: linear-gradient(90deg, transparent, rgba(255,255,255,.08), transparent);
+            transform: translateX(-100%);
+            animation: pgShimmer 3s ease-in-out 1s infinite;
+        }
+
+        /* ── Modal / overlay ───────────────────────────────────── */
+        #pgOverlay {
+            position: fixed;
+            inset: 0;
+            background: rgba(1,4,9,.82);
+            z-index: 9998;
+            display: none;
+            align-items: center;
+            justify-content: center;
+            backdrop-filter: blur(6px);
+            animation: pgFadeIn .2s ease;
+        }
+        #pgOverlay.open { display: flex; }
+        @keyframes pgFadeIn { from{opacity:0} to{opacity:1} }
+
+        #pgModal {
+            width: 96vw;
+            height: 92vh;
+            max-width: 1280px;
+            background: #0d1117;
+            border: 1px solid rgba(188,140,255,.35);
+            border-radius: 12px;
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+            box-shadow: 0 24px 64px rgba(0,0,0,.8), 0 0 0 1px rgba(188,140,255,.15);
+            animation: pgModalIn .3s cubic-bezier(.34,1.1,.64,1);
+        }
+        @keyframes pgModalIn {
+            from { opacity: 0; transform: scale(.96) translateY(12px); }
+            to   { opacity: 1; transform: scale(1) translateY(0); }
+        }
+
+        .pg-modal-bar {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            padding: 10px 16px;
+            background: #161b22;
+            border-bottom: 1px solid #30363d;
+            flex-shrink: 0;
+        }
+        .pg-modal-dots { display: flex; gap: 6px; }
+        .pg-modal-dot {
+            width: 12px; height: 12px; border-radius: 50%;
+            cursor: pointer; transition: opacity .15s;
+        }
+        .pg-modal-dot:hover { opacity: .75; }
+        .pg-modal-dot.red   { background: #ff5f57; }
+        .pg-modal-dot.yel   { background: #febc2e; }
+        .pg-modal-dot.grn   { background: #28c840; }
+        .pg-modal-title {
+            flex: 1;
+            text-align: center;
+            font-size: 12px;
+            color: #6e7681;
+            font-family: 'JetBrains Mono', monospace;
+            letter-spacing: .03em;
+        }
+        .pg-modal-title strong { color: #8b949e; }
+        .pg-modal-close {
+            background: none;
+            border: none;
+            color: #6e7681;
+            font-size: 16px;
+            cursor: pointer;
+            padding: 2px 6px;
+            border-radius: 4px;
+            line-height: 1;
+            font-family: inherit;
+            transition: all .15s;
+        }
+        .pg-modal-close:hover { background: #21262d; color: #e6edf3; }
+
+        #pgFrame {
+            flex: 1;
+            border: none;
+            background: #0d1117;
+            display: block;
+        }
     </style>
+
+    <!-- PhishGuard Modal / Overlay -->
+    <div id="pgOverlay">
+        <div id="pgModal">
+            <div class="pg-modal-bar">
+                <div class="pg-modal-dots">
+                    <div class="pg-modal-dot red"   onclick="closePhishGuard()" title="Close"></div>
+                    <div class="pg-modal-dot yel"   title="Minimize (close)"></div>
+                    <div class="pg-modal-dot grn"   onclick="popoutPhishGuard()" title="Open in new tab"></div>
+                </div>
+                <div class="pg-modal-title">🎣 &nbsp;<strong>PhishGuard</strong> &nbsp;— Email Phishing Analyzer &nbsp;·&nbsp; Built by Kim Santos</div>
+                <button class="pg-modal-close" onclick="popoutPhishGuard()" title="Open in new tab">⤢</button>
+                <button class="pg-modal-close" onclick="closePhishGuard()" title="Close">✕</button>
+            </div>
+            <iframe id="pgFrame" src="" title="PhishGuard Email Analyzer"></iframe>
+        </div>
+    </div>
+
+    <script>
+        /* ── PhishGuard integration ──────────────────────────── */
+        const PG_URL = 'https://ksantos-tech.github.io/PhishingAnalyzer/';
+
+        function openPhishGuard() {
+            window.open(PG_URL, '_blank', 'noopener');
+            // Dismiss NEW badge after first open
+            const badge = document.getElementById('pgNewBadge');
+            if (badge) {
+                setTimeout(() => badge.classList.add('dismissed'), 800);
+                try { localStorage.setItem('pg_opened', '1'); } catch(e) {}
+            }
+        }
+
+        function closePhishGuard() {}
+        function popoutPhishGuard() { openPhishGuard(); }
+
+        // Don't show NEW badge if already opened before
+        (function() {
+            try {
+                if (localStorage.getItem('pg_opened')) {
+                    const b = document.getElementById('pgNewBadge');
+                    if (b) b.classList.add('dismissed');
+                }
+            } catch(e) {}
+        })();
+    </script>
+
     <script src="js/urlscan-poller.js"></script>
     <script src="js/threat-engine.js"></script>
     <script src="js/ui-panels.js"></script>
